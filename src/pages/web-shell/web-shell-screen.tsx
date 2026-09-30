@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, Linking, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+// WebViewErrorEvent/WebViewHttpErrorEvent는 패키지 루트(index.d.ts)에서
+// 재수출되지 않아 lib/WebViewTypes를 직접 가져온다 (exports 필드 제한 없음).
 import type { WebViewErrorEvent, WebViewHttpErrorEvent } from 'react-native-webview/lib/WebViewTypes';
 
 import { useNativeBridge } from '@/features/native-bridge';
@@ -61,6 +63,9 @@ function WebShellReady({ url, origin }: { url: string; origin: string }) {
   );
 
   const handleError = useCallback((_event: WebViewErrorEvent) => {
+    // 오류 화면으로 전환되면 WebView가 사라지므로, 더 이상 존재하지 않는
+    // 페이지 히스토리로 하드웨어 뒤로가기가 삼켜지지 않게 초기화한다.
+    canGoBackRef.current = false;
     setLoadFailed(true);
   }, []);
 
@@ -68,6 +73,7 @@ function WebShellReady({ url, origin }: { url: string; origin: string }) {
     (event: WebViewHttpErrorEvent) => {
       const { statusCode, url: errorUrl } = event.nativeEvent;
       if (statusCode >= 500 && originOf(errorUrl) === origin) {
+        canGoBackRef.current = false;
         setLoadFailed(true);
       }
     },

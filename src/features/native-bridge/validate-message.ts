@@ -18,7 +18,7 @@ export function containsForbiddenContent(value: string): boolean {
 }
 
 /** 문자열의 UTF-8 바이트 길이를 계산한다 (TextEncoder에 의존하지 않는다). */
-function byteLength(value: string): number {
+export function byteLength(value: string): number {
   let bytes = 0;
   for (let i = 0; i < value.length; i += 1) {
     const code = value.codePointAt(i)!;
