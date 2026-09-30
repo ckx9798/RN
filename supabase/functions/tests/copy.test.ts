@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { COPY, FORBIDDEN_WORDS, RULE_SET_VERSION } from "../_shared/domain/copy.ts";
-import { buildAllergenFindings, decideStatus } from "../_shared/domain/decide-status.ts";
+import { buildAllergenFindings } from "../_shared/domain/decide-status.ts";
 import { evaluateDiseases } from "../_shared/domain/disease-evaluator.ts";
 import type { AllergenMatch, AllergenStandard, DiseaseStandard, UserProfileSnapshot } from "../_shared/domain/types.ts";
 
@@ -105,8 +105,4 @@ Deno.test("질환 finding 제목·설명에 금지어가 없다(샘플)", () => 
     if (titleHit) throw new Error(`title에 금지어 "${titleHit}": ${f.title}`);
     if (descHit) throw new Error(`description에 금지어 "${descHit}": ${f.description}`);
   }
-});
-
-Deno.test("decideStatus 관련 상수는 순환 임포트 없이 사용 가능하다", () => {
-  assertEquals(typeof decideStatus, "function");
 });

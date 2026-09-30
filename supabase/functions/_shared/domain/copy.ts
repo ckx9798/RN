@@ -4,9 +4,34 @@
 // COPY의 모든 문자열과 도메인 모듈이 만드는 title/description 샘플에
 // 금지어가 없음을 강제한다.
 
+import type { NutrientKey } from "./types.ts";
+
 export const RULE_SET_VERSION = "2026-09-30.1";
 
 export const FORBIDDEN_WORDS = ["안심", "안전", "섭취 적합"] as const;
+
+/** 영양소 키 -> 한글 표기. decide-status/disease-evaluator가 공유한다(M4). */
+export const NUTRIENT_NAMES: Record<NutrientKey, string> = {
+  energy: "열량",
+  carbohydrate: "탄수화물",
+  sugars: "당류",
+  protein: "단백질",
+  fat: "지방",
+  saturated_fat: "포화지방",
+  cholesterol: "콜레스테롤",
+  sodium: "나트륨",
+  potassium: "칼륨",
+  phosphorus: "인",
+  calcium: "칼슘",
+};
+
+/** "{key}" 자리표시자를 vars 값으로 채운다. decide-status/disease-evaluator가 공유한다(M5). */
+export function fillTemplate(template: string, vars: Record<string, string>): string {
+  return Object.entries(vars).reduce(
+    (text, [key, value]) => text.replaceAll(`{${key}}`, value),
+    template,
+  );
+}
 
 export const COPY = {
   noFlagsNotice:
@@ -39,4 +64,5 @@ export const COPY = {
   memoOnlyTitleSuffix: "정보 저장만",
   needsReviewTitleSuffix: "확인 필요",
   nutrientInfoTitleSuffix: "영양정보",
+  cautionTitleSuffix: "주의",
 } as const;

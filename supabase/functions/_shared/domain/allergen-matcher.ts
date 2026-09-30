@@ -9,7 +9,7 @@
 //   5. 교차혼입 문구
 //   6. 오탐 가능성이 있는 간접 별칭 (confidence: possible)
 
-import { flattenAtoms, parseIngredients } from "./ingredient-parser.ts";
+import { flattenAtoms, NUMERIC_PERCENT, parseIngredients } from "./ingredient-parser.ts";
 import { normalizeText } from "./normalize.ts";
 import type { AllergenMatch, AllergenTerm, IngredientNode } from "./types.ts";
 
@@ -25,6 +25,21 @@ export const NEGATIVE_COMPOUNDS: Record<string, string[]> = {
 };
 
 const PARTICLES = ["으로", "을", "를", "이", "가", "와", "과", "및", "등", "은", "는", "로"];
+
+/**
+ * 표시 문구에서 용어 뒤에 공백 없이 붙는 서술어. 조사 제거보다 먼저
+ * 떼어낸다(예: "밀함유" -> "밀", "대두포함" -> "대두"). 긴 것부터 검사한다.
+ */
+const CUE_SUFFIXES = ["함유함", "함유", "포함"];
+
+function stripCueSuffix(token: string): string {
+  for (const suffix of CUE_SUFFIXES) {
+    if (token.length > suffix.length && token.endsWith(suffix)) {
+      return token.slice(0, token.length - suffix.length);
+    }
+  }
+  return token;
+}
 
 type MatchInput = {
   ingredientsText: string | null;
@@ -51,14 +66,17 @@ function stripParticle(token: string): string {
   return token;
 }
 
+// normalizeText가 NFKC를 적용한 뒤이므로 ㆍ(U+318D)는 이미 U+119E로
+// 바뀌어 있다. 두 형태를 모두 넣어 안전하게 처리한다.
+const STATEMENT_SEPARATORS =
+  /[,，、·ㆍᆞ‧/\n\r()\[\]:;|【】{}<>「」\s]+/;
+
 /** 문장(공식 표시 문구·교차혼입 문구)을 구분자·공백·조사 기준으로 토큰화한다. */
 function tokenizeStatement(text: string): string[] {
   const normalized = normalizeText(text);
-  const rough = normalized.split(/[,，、·/\n\r()\[\]\s]+/).filter((t) => t.length > 0);
-  return rough.map(stripParticle).filter((t) => t.length > 0);
+  const rough = normalized.split(STATEMENT_SEPARATORS).filter((t) => t.length > 0);
+  return rough.map((t) => stripParticle(stripCueSuffix(t))).filter((t) => t.length > 0);
 }
-
-const NUMERIC_PERCENT = /^\d+(\.\d+)?%?$/;
 
 /**
  * phrase 매칭용 원자 후보. flattenAtoms(공백까지 분리)와 달리 콜론
@@ -162,6 +180,11 @@ function matchStatement(
         ? token.includes(normalizedTerm)
         : token === normalizedTerm;
       if (!isMatch) continue;
+      if (term.matchType === "phrase") {
+        const negatives = NEGATIVE_COMPOUNDS[term.term] ?? [];
+        const blocked = negatives.some((neg) => token.includes(normalizeText(neg)));
+        if (blocked) continue;
+      }
       candidates.push({
         allergenId: term.allergenId,
         term: term.term,
@@ -173,7 +196,7 @@ function matchStatement(
     }
   }
 
-  return candidates;
+  return dedupeLongerPhraseWins(candidates);
 }
 
 /** (allergenId, kind, source) 별로 confirmed 우선 1건으로 합친다. */

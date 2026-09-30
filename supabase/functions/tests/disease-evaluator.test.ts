@@ -37,6 +37,13 @@ const THYROID_NO_NUTRIENTS: DiseaseStandard = {
   relatedNutrients: [],
 };
 
+const NO_KNOWN_DISEASE: DiseaseStandard = {
+  id: "DIS-001",
+  name: "질환 없음",
+  analysisSupport: "exclusive",
+  relatedNutrients: [],
+};
+
 function baseProfile(diseaseIds: string[]): UserProfileSnapshot {
   return { allergenIds: [], diseaseIds, hasNoKnownDisease: false, consentVersion: "v1" };
 }
@@ -185,15 +192,32 @@ Deno.test("규칙이 조건을 만족하지 않으면 발동하지 않고 info�
   assertEquals(findings[0].severity, "info");
 });
 
-Deno.test("단위 불일치면 규칙을 실행하지 않고 needs_review", () => {
+Deno.test("단위 불일치 규칙만 있으면 그 규칙은 실행하지 않고(info) 불일치 안내를 함께 낸다(M1)", () => {
   const findings = evaluateDiseases({
     profile: baseProfile(["DIS-002"]),
     diseases: [HYPERTENSION],
     rules: [{ ...ACTIVE_SODIUM_RULE, unit: "g" }],
     nutrients: { sodium: { value: 800, unit: "mg" } },
   });
-  assertEquals(findings.length, 1);
-  assertEquals(findings[0].severity, "needs_review");
+  // 단위가 맞는 규칙이 없으므로 값 안내(info) + 단위 불일치 안내(needs_review)
+  // 두 건이 "함께" 나온다 — 단위 불일치가 결과를 통째로 대체하지 않는다.
+  assertEquals(findings.length, 2);
+  const severities = findings.map((f) => f.severity).sort();
+  assertEquals(severities, ["info", "needs_review"]);
+});
+
+Deno.test("단위가 맞는 규칙이 발동해도 단위 불일치 규칙이 섞여 있으면 caution을 지우지 않고 불일치 안내를 함께 낸다(M1)", () => {
+  const findings = evaluateDiseases({
+    profile: baseProfile(["DIS-002"]),
+    diseases: [HYPERTENSION],
+    rules: [ACTIVE_SODIUM_RULE, { ...ACTIVE_SODIUM_RULE, id: 2, unit: "g" }],
+    nutrients: { sodium: { value: 800, unit: "mg" } },
+  });
+  assertEquals(findings.length, 2);
+  const caution = findings.find((f) => f.severity === "caution");
+  const mismatchNotice = findings.find((f) => f.severity === "needs_review");
+  assertEquals(caution?.source, "rule");
+  assertEquals(mismatchNotice?.source, "user_profile");
 });
 
 Deno.test("limited 질환: relatedNutrients 비어있으면 needs_review(일부 지원 안내)", () => {
@@ -229,4 +253,48 @@ Deno.test("여러 질환을 선택하면 각각 findings를 만든다", () => {
     nutrients: null,
   });
   assertEquals(findings.length, 2);
+});
+
+Deno.test("exclusive(DIS-001, 질환 없음)은 diseaseIds에 들어와도 finding을 만들지 않는다(M2)", () => {
+  const findings = evaluateDiseases({
+    profile: baseProfile(["DIS-001"]),
+    diseases: [NO_KNOWN_DISEASE],
+    rules: [],
+    nutrients: null,
+  });
+  assertEquals(findings, []);
+});
+
+Deno.test("exclusive와 다른 질환이 섞여도 exclusive만 건너뛴다(M2)", () => {
+  const findings = evaluateDiseases({
+    profile: baseProfile(["DIS-001", "DIS-006"]),
+    diseases: [NO_KNOWN_DISEASE, RHINITIS],
+    rules: [],
+    nutrients: null,
+  });
+  assertEquals(findings.length, 1);
+  assertEquals(findings[0].standardId, "DIS-006");
+});
+
+Deno.test("영양정보 안내에는 원문 키가 아니라 한글 영양소명이 들어간다(M4)", () => {
+  const findings = evaluateDiseases({
+    profile: baseProfile(["DIS-002"]),
+    diseases: [HYPERTENSION],
+    rules: [],
+    nutrients: { sodium: { value: 300, unit: "mg" } },
+  });
+  assertEquals(findings.length, 1);
+  assertEquals(findings[0].description.includes("나트륨"), true);
+  assertEquals(findings[0].description.includes("sodium"), false);
+});
+
+Deno.test("발동한 규칙의 제목에 COPY 문구를 쓴다(M3, 리터럴 '주의' 하드코딩 아님)", () => {
+  const findings = evaluateDiseases({
+    profile: baseProfile(["DIS-002"]),
+    diseases: [HYPERTENSION],
+    rules: [ACTIVE_SODIUM_RULE],
+    nutrients: { sodium: { value: 800, unit: "mg" } },
+  });
+  assertEquals(findings.length, 1);
+  assertEquals(findings[0].title, "고혈압 주의");
 });

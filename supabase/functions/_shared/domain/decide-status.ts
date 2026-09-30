@@ -1,6 +1,6 @@
 // 알레르기 finding 구성과 최종 상태 판정 (설계 12.1, 12.2).
 
-import { COPY } from "./copy.ts";
+import { COPY, fillTemplate } from "./copy.ts";
 import type {
   AllergenMatch,
   AllergenStandard,
@@ -9,13 +9,6 @@ import type {
   Finding,
   UserProfileSnapshot,
 } from "./types.ts";
-
-function fillTemplate(template: string, vars: Record<string, string>): string {
-  return Object.entries(vars).reduce(
-    (text, [key, value]) => text.replaceAll(`{${key}}`, value),
-    template,
-  );
-}
 
 /**
  * 등록된 알레르기와 일치하는 매칭만 finding으로 만든다(등록하지 않은

@@ -4,7 +4,7 @@
 
 import { assertEquals } from "@std/assert";
 import { dirname, fromFileUrl, join } from "@std/path";
-import { ALLERGEN_TERMS, DISEASE_STANDARDS } from "./fixtures/reference-data.ts";
+import { ALLERGEN_STANDARDS, ALLERGEN_TERMS, DISEASE_STANDARDS } from "./fixtures/reference-data.ts";
 
 const SEED_PATH = join(
   dirname(fromFileUrl(import.meta.url)),
@@ -13,6 +13,12 @@ const SEED_PATH = join(
   "migrations",
   "20260930000300_reference_seed.sql",
 );
+
+type SeedAllergenStandard = {
+  id: string;
+  name: string;
+  sourceUrl: string;
+};
 
 type SeedAllergenTerm = {
   allergenId: string;
@@ -28,6 +34,15 @@ type SeedDisease = {
   analysisSupport: string;
   relatedNutrients: string[];
 };
+
+function parseAllergenStandards(sql: string): SeedAllergenStandard[] {
+  const re = /\('(FOOD-\d{3})',\s*'([^']*)',\s*'([^']*)',\s*'[^']*'\)/g;
+  const results: SeedAllergenStandard[] = [];
+  for (const m of sql.matchAll(re)) {
+    results.push({ id: m[1], name: m[2], sourceUrl: m[3] });
+  }
+  return results;
+}
 
 function parseAllergenTerms(sql: string): SeedAllergenTerm[] {
   const re = /\('(FOOD-\d{3})',\s*'([^']*)',\s*'(\w+)',\s*'(\w+)',\s*(\d+)\)/g;
@@ -62,6 +77,17 @@ function parseDiseaseStandards(sql: string): SeedDisease[] {
 function sortKey(v: unknown): string {
   return JSON.stringify(v);
 }
+
+Deno.test("시드 일치: allergen_standards가 fixture와 집합이 같다(M9)", async () => {
+  const sql = await Deno.readTextFile(SEED_PATH);
+  const seedStandards = parseAllergenStandards(sql);
+
+  assertEquals(seedStandards.length, 19, "시드에서 allergen_standards 19행을 못 읽었다(정규식 확인 필요)");
+
+  const seedSet = seedStandards.map(sortKey).sort();
+  const fixtureSet = ALLERGEN_STANDARDS.map(sortKey).sort();
+  assertEquals(fixtureSet, seedSet);
+});
 
 Deno.test("시드 일치: allergen_match_terms가 fixture와 집합이 같다", async () => {
   const sql = await Deno.readTextFile(SEED_PATH);

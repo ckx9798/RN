@@ -2,9 +2,13 @@
 //   - 유니코드(NFKC)와 공백을 정규화한다.
 //   - 영문은 소문자로 변환한다.
 
-/** NFKC 정규화, 소문자 변환, 연속 공백을 1칸으로 축소, 양끝 trim. */
+/** 제로폭 문자(U+200B-U+200D, U+FEFF) — OCR이 종종 글자 사이에 끼워 넣는다. */
+const ZERO_WIDTH_RE = /[​-‍﻿]/g;
+
+/** NFKC 정규화, 제로폭 문자 제거, 소문자 변환, 연속 공백을 1칸으로 축소, 양끝 trim. */
 export function normalizeText(input: string): string {
   return input
+    .replace(ZERO_WIDTH_RE, "")
     .normalize("NFKC")
     .toLowerCase()
     .replace(/\s+/g, " ")

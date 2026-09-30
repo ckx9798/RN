@@ -6,17 +6,30 @@
 import { normalizeText } from "./normalize.ts";
 import type { IngredientNode } from "./types.ts";
 
-const TOP_LEVEL_SEPARATORS = /[,，、·/\n\r]/;
+// 구분자: 쉼표류, 가운데점류(·, ㆍ U+318D와 NFKC 형태 U+119E, ‧ U+2027),
+// 슬래시, 줄바꿈, 세미콜론, 파이프, 그리고 【】{}<>「」처럼 OCR이 흔히
+// 만들어내는 유사 괄호 문자(중첩 구조가 아니라 단순 구분자로 취급한다).
+// ':'는 여기 넣지 않는다 — "밀가루(밀:미국산)"처럼 괄호 안에서 원산지
+// 등을 표기하는 콜론은 복합원재료 자식 노드 하나로 유지해야 하고,
+// flattenAtoms/collectPhraseCandidates가 콜론을 이미 원자 단위로 쪼갠다.
+const TOP_LEVEL_SEPARATORS =
+  /[,，、·ㆍᆞ‧/\n\r;|【】{}<>「」]/;
 const OPEN_BRACKETS = new Set(["(", "["]);
 const CLOSE_BRACKETS = new Set([")", "]"]);
 
+function isDigit(ch: string | undefined): boolean {
+  return ch !== undefined && ch >= "0" && ch <= "9";
+}
+
 /** 최상위 구분자로 텍스트를 나눈다. 괄호 안의 구분자는 무시한다(깊이 추적). */
 function splitTopLevel(text: string): string[] {
+  const chars = [...text];
   const segments: string[] = [];
   let depth = 0;
   let current = "";
 
-  for (const ch of text) {
+  for (let i = 0; i < chars.length; i += 1) {
+    const ch = chars[i];
     if (OPEN_BRACKETS.has(ch)) {
       depth += 1;
       current += ch;
@@ -24,6 +37,18 @@ function splitTopLevel(text: string): string[] {
     }
     if (CLOSE_BRACKETS.has(ch)) {
       depth = Math.max(0, depth - 1);
+      current += ch;
+      continue;
+    }
+    if (depth === 0 && ch === ".") {
+      // 소수점(예: "12.5%")은 구분자로 보지 않는다. 숫자 사이가 아닌
+      // '.'만 구분자로 취급한다(예: "우유.대두").
+      const isDecimal = isDigit(chars[i - 1]) && isDigit(chars[i + 1]);
+      if (!isDecimal) {
+        segments.push(current);
+        current = "";
+        continue;
+      }
       current += ch;
       continue;
     }
@@ -96,7 +121,8 @@ export function parseIngredients(text: string): IngredientNode[] {
   return segments.map(parseSegment);
 }
 
-const NUMERIC_PERCENT = /^\d+(\.\d+)?%?$/;
+/** 퍼센트 수치 토큰(예: "12.5%", "10") — flattenAtoms와 collectPhraseCandidates가 공유한다. */
+export const NUMERIC_PERCENT = /^\d+(\.\d+)?%?$/;
 
 function tokenizeAtoms(normalized: string): string[] {
   return normalized

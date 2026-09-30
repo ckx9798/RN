@@ -5,15 +5,8 @@
 //   threshold=null)은 절대 실행하지 않는다.
 // - 단위가 일치하지 않는 규칙도 실행하지 않는다.
 
-import { COPY } from "./copy.ts";
+import { COPY, fillTemplate, NUTRIENT_NAMES } from "./copy.ts";
 import type { DiseaseRule, DiseaseStandard, Finding, Nutrients, UserProfileSnapshot } from "./types.ts";
-
-function fillTemplate(template: string, vars: Record<string, string>): string {
-  return Object.entries(vars).reduce(
-    (text, [key, value]) => text.replaceAll(`{${key}}`, value),
-    template,
-  );
-}
 
 function isRuleExecutable(rule: DiseaseRule): boolean {
   return rule.active && rule.reviewedAt !== null && rule.evidenceUrl !== null && rule.threshold !== null;
@@ -51,6 +44,12 @@ export function evaluateDiseases(input: Input): Finding[] {
   for (const diseaseId of profile.diseaseIds) {
     const disease = byId.get(diseaseId);
     if (!disease) continue;
+
+    // DIS-001("질환 없음")처럼 배타적 선택 상태는 애초에 다른 질환과
+    // 함께 선택되지 않아야 하고(설계 9.2), hasNoKnownDisease로 이미
+    // 걸러진다. 그래도 diseaseIds에 들어온 경우를 대비해 명시적으로
+    // 건너뛴다 — finding을 만들지 않는다(M2).
+    if (disease.analysisSupport === "exclusive") continue;
 
     if (disease.analysisSupport === "unsupported") {
       findings.push({
@@ -119,9 +118,46 @@ export function evaluateDiseases(input: Input): Finding[] {
 
       const applicableRules = diseaseRules.filter((r) => r.targetKey === nutrientKey);
       const executableRules = applicableRules.filter(isRuleExecutable);
-      const unitMismatch = executableRules.some((r) => r.unit !== nutrient.unit);
+      // 단위가 일치하는 규칙만 실제로 평가한다. 단위가 다른 규칙이
+      // 섞여 있다고 해서 단위가 맞는 규칙의 평가 결과를 지우지 않는다
+      // (M1) — 대신 별도의 확인 필요 finding을 "함께" 추가한다.
+      const matchingUnitRules = executableRules.filter((r) => r.unit === nutrient.unit);
+      const mismatchedUnitRules = executableRules.filter((r) => r.unit !== nutrient.unit);
 
-      if (unitMismatch) {
+      const triggered = matchingUnitRules.find((r) => ruleTriggers(r, nutrient.value));
+
+      if (triggered) {
+        findings.push({
+          category: "disease_nutrition",
+          severity: triggered.severity,
+          standardId: disease.id,
+          title: `${disease.name} ${
+            triggered.severity === "caution" ? COPY.cautionTitleSuffix : COPY.needsReviewTitleSuffix
+          }`,
+          description: triggered.message,
+          matchedText: null,
+          source: "rule",
+          evidenceUrl: triggered.evidenceUrl,
+        });
+      } else {
+        // 실행 가능한(단위가 맞는) 규칙이 없거나 발동하지 않음 -> 값만 안내
+        findings.push({
+          category: "disease_nutrition",
+          severity: "info",
+          standardId: disease.id,
+          title: `${disease.name} ${COPY.nutrientInfoTitleSuffix}`,
+          description: fillTemplate(COPY.diseaseNutrientInfoDescriptionTemplate, {
+            nutrient: NUTRIENT_NAMES[nutrientKey],
+            value: String(nutrient.value),
+            unit: nutrient.unit,
+          }),
+          matchedText: null,
+          source: "mfds_api",
+          evidenceUrl: null,
+        });
+      }
+
+      if (mismatchedUnitRules.length > 0) {
         findings.push({
           category: "disease_nutrition",
           severity: "needs_review",
@@ -132,44 +168,8 @@ export function evaluateDiseases(input: Input): Finding[] {
           source: "user_profile",
           evidenceUrl: null,
         });
-        handled = true;
-        continue;
       }
 
-      const triggered = executableRules.find(
-        (r) => r.unit === nutrient.unit && ruleTriggers(r, nutrient.value),
-      );
-
-      if (triggered) {
-        findings.push({
-          category: "disease_nutrition",
-          severity: triggered.severity,
-          standardId: disease.id,
-          title: `${disease.name} ${triggered.severity === "caution" ? "주의" : COPY.needsReviewTitleSuffix}`,
-          description: triggered.message,
-          matchedText: null,
-          source: "rule",
-          evidenceUrl: triggered.evidenceUrl,
-        });
-        handled = true;
-        continue;
-      }
-
-      // 실행 가능한 규칙이 없거나(비활성·미검수) 발동하지 않음 -> 값만 안내
-      findings.push({
-        category: "disease_nutrition",
-        severity: "info",
-        standardId: disease.id,
-        title: `${disease.name} ${COPY.nutrientInfoTitleSuffix}`,
-        description: fillTemplate(COPY.diseaseNutrientInfoDescriptionTemplate, {
-          nutrient: nutrientKey,
-          value: String(nutrient.value),
-          unit: nutrient.unit,
-        }),
-        matchedText: null,
-        source: "mfds_api",
-        evidenceUrl: null,
-      });
       handled = true;
     }
 
