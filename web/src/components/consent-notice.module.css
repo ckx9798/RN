@@ -1,0 +1,40 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.list {
+  margin: 0;
+  padding-left: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.item {
+  font-size: var(--font-size-sm);
+  color: var(--color-foreground-muted);
+}
+
+.disclaimer {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-foreground-muted);
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target-min);
+  font-size: var(--font-size-sm);
+}
+
+.checkboxRow input {
+  width: 20px;
+  height: 20px;
+}
