@@ -64,10 +64,19 @@ Deno.test("probe5 R2: 교차혼입 절 먼저, 그다음 함유", () => {
   );
 });
 
-Deno.test("probe5 R3: 함유 단서 없이 트리거 뒤에 오는 원재료도 direct", () => {
+// [3차 리뷰 수정, 룰링 2] short-form도 full-form과 "똑같이" 쉼표 목록을
+// 뒤에서부터 훑도록 일반화했다(N1~N11 요구사항). 그 결과 트리거 바로
+// 앞에 경계 표식(함유 단서, "원재료(명):", "이 제품은", 괄호 닫힘)이
+// 전혀 없으면 문장 맨 앞까지 전부 지배 목록에 들어간다 — 이는 이미
+// full-form이 갖고 있던 동작과 정확히 같다(예: "원재료:" 없이 쓴
+// "밀가루, 설탕, 땅콩을 사용한 제품과 같은 제조시설"도 똑같이 밀가루·
+// 설탕까지 쓸어간다). 그래서 이 문장은 "밀가루, 설탕"이 "땅콩"과 함께
+// 교차혼입으로 잡힌다 — 여전히 caution으로 이어지므로 안전에는 영향이
+// 없다(미탐 아님, 카테고리만 cross로 바뀜).
+Deno.test("probe5 R3: 경계 표식이 없으면 short-form도 full-form처럼 앞 목록 전체를 지배 항목으로 본다(룰링 2)", () => {
   assertEquals(
     run("밀가루, 설탕, 땅콩과 같은 제조시설에서 제조, 우유, 대두"),
-    ["FOOD-002:direct", "FOOD-004:cross_contamination", "FOOD-005:direct", "FOOD-006:direct"],
+    ["FOOD-002:direct", "FOOD-004:cross_contamination", "FOOD-005:direct", "FOOD-006:cross_contamination"],
   );
 });
 
@@ -217,10 +226,22 @@ for (const [text, expected] of SEP_STMT_CASES) {
   });
 }
 
-Deno.test("probe7: 한글 사이 '.'로 나뉜 문장에서도 함유 절이 직접 판정된다", () => {
+// [S2 리뷰 3차 수정, 룰링 R12] 한글 사이 '.'로 문장이 나뉘어 "알류"가
+// 함유 단서와 다른 문장에 떨어져도, label_context가 이제 어디서든
+// 원자 토큰으로 매칭되므로 FOOD-001도 함께 잡힌다 — 예전에는 "함유
+// 절 안에서만" 제약 때문에 놓쳤다(F2 잔존 사례, 기대값을 바로잡음).
+Deno.test("probe7/9: 한글 사이 '.'로 나뉜 문장에서도 label_context가 direct로 잡힌다(R12)", () => {
   assertEquals(
     run("밀가루, 설탕 알류.조개류 함유"),
-    ["FOOD-006:direct", "FOOD-013:direct"],
+    ["FOOD-001:direct", "FOOD-006:direct", "FOOD-013:direct"],
+  );
+  assertEquals(
+    run("알류.조개류.밀 함유"),
+    ["FOOD-001:direct", "FOOD-006:direct", "FOOD-013:direct"],
+  );
+  assertEquals(
+    run("밀가루\n알류. 조개류 함유"),
+    ["FOOD-001:direct", "FOOD-006:direct", "FOOD-013:direct"],
   );
 });
 

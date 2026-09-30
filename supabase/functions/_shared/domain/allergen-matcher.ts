@@ -158,10 +158,14 @@ function matchIngredientAtoms(text: string, terms: AllergenTerm[]): Candidate[] 
   const candidates: Candidate[] = [];
 
   for (const term of terms) {
-    if (term.matchType === "label_context") continue; // 공식 표시 문구 문맥에서만 확정
     const normalizedTerm = normalizeText(term.term);
 
-    if (term.matchType === "exact_token") {
+    // R12: label_context도 exact_token과 동일하게 원자 토큰 정확 일치로
+    // 매칭한다(예: "알류", "조개류", "아황산류") — 더는 "함유 절 안에서만"
+    // 이라는 문맥 제약을 두지 않는다. kind는 항상 'direct'다: 이 텍스트는
+    // 이미 교차혼입 지배 항목 목록이 빠진 나머지이므로, 여기서 찾으면
+    // 곧 direct를 뜻한다(순수 가산적 cross는 매칭 함수 바깥에서 처리).
+    if (term.matchType === "exact_token" || term.matchType === "label_context") {
       for (const atom of exactAtoms) {
         if (atom === normalizedTerm) {
           candidates.push({
@@ -178,11 +182,9 @@ function matchIngredientAtoms(text: string, terms: AllergenTerm[]): Candidate[] 
     }
 
     // phrase
+    const negatives = NEGATIVE_COMPOUNDS[term.term] ?? [];
     for (const candidate of phraseCandidates) {
-      if (!candidate.includes(normalizedTerm)) continue;
-      const negatives = NEGATIVE_COMPOUNDS[term.term] ?? [];
-      const blocked = negatives.some((neg) => candidate.includes(normalizeText(neg)));
-      if (blocked) continue;
+      if (!hasUnblockedOccurrence(candidate, normalizedTerm, negatives)) continue;
       candidates.push({
         allergenId: term.allergenId,
         term: term.term,
@@ -198,13 +200,51 @@ function matchIngredientAtoms(text: string, terms: AllergenTerm[]): Candidate[] 
 }
 
 /**
- * 같은 원자 토큰(matchedText)에 대해 phrase로 매칭된 여러 용어 중 한
- * 용어 문자열이 다른 용어 문자열의 부분 문자열이면 더 긴 쪽만 남긴다.
- * 시드에 같은 기준 안에서 겹치는 phrase 용어(예: FOOD-003의 "메밀"과
- * "메밀가루")가 실제로 있어 이 로직이 실행된다 — 다만 지금까지 확인된
- * 겹침은 전부 같은 allergenId 안에서만 일어나(교차 기준 겹침은
- * NEGATIVE_COMPOUNDS로 따로 막는다) 최종 판정에는 영향이 없다(중복
- * 제거 효과만 있다).
+ * 부정 합성어 검사를 "이 용어가 이 후보 문자열 어딘가에 나타나긴 하는데,
+ * 그 모든 출현이 부정 합성어 안에 파묻혀 있지는 않은가"로 좁힌다(규칙
+ * NC1). 예전에는 후보 문자열 전체에 부정 합성어가 있으면(예: "새우육
+ * 우육 혼합분말" 안의 "새우육") 같은 문자열 안의 무관한 다른 출현(뒤의
+ * 독립된 "우육")까지 통째로 막아버렸다. 이제는 용어의 각 출현 위치를
+ * 부정 합성어의 출현 구간과 겹치는지로 개별 판정해, 겹치지 않는 출현이
+ * 하나라도 있으면 매칭으로 본다.
+ */
+function hasUnblockedOccurrence(candidate: string, term: string, negatives: string[]): boolean {
+  if (negatives.length === 0) return candidate.includes(term);
+
+  const negativeSpans: Array<[number, number]> = [];
+  for (const neg of negatives) {
+    const negNorm = normalizeText(neg);
+    if (negNorm.length === 0) continue;
+    let from = 0;
+    let idx: number;
+    while ((idx = candidate.indexOf(negNorm, from)) !== -1) {
+      negativeSpans.push([idx, idx + negNorm.length]);
+      from = idx + 1;
+    }
+  }
+
+  let from = 0;
+  let idx: number;
+  while ((idx = candidate.indexOf(term, from)) !== -1) {
+    const end = idx + term.length;
+    const blocked = negativeSpans.some(([negStart, negEnd]) => idx >= negStart && end <= negEnd);
+    if (!blocked) return true;
+    from = idx + 1;
+  }
+  return false;
+}
+
+/**
+ * 같은 원자 토큰(matchedText)에 대해, "같은 allergenId 안에서" phrase로
+ * 매칭된 여러 용어 중 한 용어 문자열이 다른 용어 문자열의 부분 문자열
+ * 이면 더 긴 쪽만 남긴다(예: FOOD-003의 "메밀"과 "메밀가루" 중복 제거).
+ * allergenId가 다르면 절대 합치지 않는다 — "메밀가루 밀가루 혼합분"
+ * 처럼 서로 다른 기준(FOOD-003 "메밀가루", FOOD-006 "밀가루")이 같은
+ * 후보 문자열에서 각각 겹치지 않는 출현으로 매칭됐을 때, 문자열만 보고
+ * "밀가루"가 "메밀가루"의 부분 문자열이라며 지워버리면 서로 다른 독립
+ * 출현(메밀가루 안의 것이 아니라 뒤쪽의 단독 "밀가루")을 잃는다(NC2,
+ * 룰링 5) — hasUnblockedOccurrence가 이미 NEGATIVE_COMPOUNDS로 올바른
+ * 출현만 남겨놨으므로, 여기서는 같은 기준 안에서만 중복을 줄인다.
  */
 function dedupeLongerPhraseWins(candidates: Candidate[]): Candidate[] {
   const result: Candidate[] = [];
@@ -216,6 +256,7 @@ function dedupeLongerPhraseWins(candidates: Candidate[]): Candidate[] {
     const shadowedByLonger = candidates.some((other) =>
       other !== candidate &&
       other.matchType === "phrase" &&
+      other.allergenId === candidate.allergenId &&
       other.matchedText === candidate.matchedText &&
       other.term.length > candidate.term.length &&
       other.term.includes(candidate.term)
@@ -240,10 +281,8 @@ function matchStatement(
       const normalizedTerm = normalizeText(term.term);
 
       if (term.matchType === "phrase") {
-        if (!token.includes(normalizedTerm)) continue;
         const negatives = NEGATIVE_COMPOUNDS[term.term] ?? [];
-        const blocked = negatives.some((neg) => token.includes(normalizeText(neg)));
-        if (blocked) continue;
+        if (!hasUnblockedOccurrence(token, normalizedTerm, negatives)) continue;
         candidates.push({
           allergenId: term.allergenId,
           term: term.term,

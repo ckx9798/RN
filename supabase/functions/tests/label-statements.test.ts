@@ -41,11 +41,19 @@ Deno.test("extractStatements: ingredientsText에서 교차혼입 절 분리(트�
   // 담는다 — 예전처럼 "트리거부터 문장 끝까지"를 통째로 담지 않는다.
   // 트리거 뒤 텍스트("에서 제조하고 있습니다")는 직접 판정 대상으로
   // 본문에 남는다.
-  assertEquals(result.crossContamination, "이 제품은 땅콩을 사용한 제품과 같은 제조시설");
-  assertEquals(result.ingredientsBody, "밀가루, 설탕\n에서 제조하고 있습니다");
+  // [3차 리뷰 수정, 룰링 6] "이 제품은"도 절 경계로 보고 그 앞은 잘라낸다
+  // (여기서는 문장 맨 앞이라 잘라낼 게 없어 매칭 결과에는 영향이 없다 —
+  // crossContamination 문자열에서 "이 제품은"이 빠질 뿐이다).
+  assertEquals(result.crossContamination, "땅콩을 사용한 제품과 같은 제조시설");
+  // "이 제품은"은 절 경계 표식으로만 쓰이고 그 자체는 direct 쪽(본문)에
+  // 남는다(룰링 6) — 용어가 아니라서 매칭에는 영향이 없다.
+  assertEquals(result.ingredientsBody, "밀가루, 설탕\n이 제품은 에서 제조하고 있습니다");
 });
 
-Deno.test("extractStatements: ingredientsText에 없으면 rawText에서 찾는다(ingredientsBody는 유지)", () => {
+// [3차 리뷰 수정, 룰링 7] rawText는 더는 "ingredientsText가 아무것도
+// 못 찾았을 때만" 쓰는 폴백이 아니다 — 항상 direct 판정 대상으로
+// 본문에 더해진다. 테스트 이름과 기대값을 그 동작에 맞게 갱신한다.
+Deno.test("extractStatements: rawText는 항상 본문에 더해진다(폴백이 아니다, 룰링 7)", () => {
   const result = extractStatements({
     ingredientsText: "밀가루, 설탕, 대두",
     allergenStatement: null,
@@ -53,7 +61,10 @@ Deno.test("extractStatements: ingredientsText에 없으면 rawText에서 찾는�
     rawText: "영양성분표\n이 제품은 대두, 밀을 함유하고 있습니다.\n제조원: OO식품",
   });
   assertEquals(result.allergen, "이 제품은 대두, 밀을 함유하고 있습니다");
-  assertEquals(result.ingredientsBody, "밀가루, 설탕, 대두");
+  assertEquals(
+    result.ingredientsBody,
+    "밀가루, 설탕, 대두\n영양성분표\n이 제품은 대두, 밀을 함유하고 있습니다\n제조원: OO식품",
+  );
 });
 
 Deno.test("extractStatements: 일치하는 문장이 전혀 없으면 null", () => {

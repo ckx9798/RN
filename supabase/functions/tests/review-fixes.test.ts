@@ -46,34 +46,40 @@ Deno.test("item1: 함유 절과 교차혼입 절이 있으며로 이어진 문�
   assertEquals(matches, ["FOOD-004:cross_contamination", "FOOD-005:direct", "FOOD-006:direct"]);
 });
 
-Deno.test("item1: 콤마로만 이어진 한 줄, 사용한 제품과 없는 짧은 형태 -> 밀가루/대두는 본문에 남고 땅콩만 cross", () => {
+// [3차 리뷰 수정, 룰링 2] short-form의 쉼표 목록 역행 탐색을 full-form과
+// "정확히 같게" 일반화한 결과(N1~N11), 트리거 바로 앞에 경계 표식이
+// 전혀 없으면 문장 맨 앞까지 전부 지배 목록으로 본다 — full-form이
+// "원재료:" 같은 표식 없이 쓰이면 앞의 원재료까지 쓸어가는 것과 동일한
+// 동작이다. 그 결과 이 문장은 밀가루·대두까지 땅콩과 함께 교차혼입으로
+// 잡힌다(여전히 caution, 미탐 아님). 이전 기대값(밀가루/대두 direct)은
+// 룰링 2가 명시적으로 요구하는 N4류 동작("알류, 조개류와 같은 시설" →
+// 둘 다 cross)과 구조적으로 같은 코드 경로라 되돌릴 수 없다.
+Deno.test("item1/R3: 경계 표식이 없는 콤마 목록은 short-form도 전부 지배 항목으로 본다(룰링 2, 이전 기대값 대체)", () => {
   const e = extractStatements({
     ingredientsText: "정제수, 설탕, 밀가루, 대두, 땅콩과 같은 제조시설에서 제조",
     allergenStatement: null,
     crossContaminationStatement: null,
     rawText: "",
   });
-  // 밀가루·대두는 본문(ingredientsBody)에 남아 원재료 매칭(direct)으로 잡힌다.
-  assertEquals(e.ingredientsBody.includes("밀가루"), true);
-  assertEquals(e.ingredientsBody.includes("대두"), true);
   assertEquals(e.crossContamination !== null && e.crossContamination.includes("땅콩"), true);
 
   const matches = idsWithKind(e.ingredientsBody, e.allergen, e.crossContamination);
-  assertEquals(matches, ["FOOD-004:cross_contamination", "FOOD-005:direct", "FOOD-006:direct"]);
+  assertEquals(matches, [
+    "FOOD-004:cross_contamination",
+    "FOOD-005:cross_contamination",
+    "FOOD-006:cross_contamination",
+  ]);
 });
 
-// [2차 리뷰 수정] 이 테스트는 1차 리뷰 때 '/'를 문장 구분자로 추가해
-// 통과시켰던 것인데, 2차 리뷰의 probe8(old/new 비교)가 그 설계가
-// "땅콩/게를 사용한 제품과 같은 제조시설"처럼 교차혼입 지배 항목
-// 목록 *안에서* '/'가 단순 나열 구분자로 쓰이는 실제 사례를 망가뜨림을
-// 보여줬다(땅콩이 지배 범위 밖으로 잘려나가 direct로 오분류됨). '/'를
-// 문장 구분자에서 뺀 결과, 이 테스트처럼 '/'로 원재료·함유·교차혼입
-// 세 구획을 억지로 이어붙이고 그 사이에 쉼표조차 없는 흔치 않은 입력은
-// 땅콩까지 direct로 판정된다(절대 안전 방향이 아닌 쪽으로 틀리지는
-// 않는다 — caution severity는 동일, category만 다르다). probe8의
-// 회귀가 훨씬 흔한 패턴이라 이 트레이드오프를 받아들였다(문서화:
-// task-S2-report.md).
-Deno.test("item1: '/'로 이어붙인 섹션 — 쉼표 없는 경계는 direct 쪽으로 남는다(probe8 회귀 수정의 트레이드오프)", () => {
+// [2차 리뷰에서 발견한 '/' 트레이드오프가 3차 리뷰 수정으로 완전히
+// 해소됨] 2차 리뷰 때는 '/'를 문장 구분자에서 뺀 부작용으로 이 사례의
+// "땅콩"이 cross가 아니라 direct로 남는 트레이드오프를 받아들였다.
+// 3차 리뷰에서 findListStart가 '/'도 항목 경계로 보고(룰링 1의 F2
+// 대응), "이 제품은"을 절 경계로 인식하게(룰링 6) 되면서, '/'로 이어
+// 붙인 앞 구획("밀가루, 설탕, 우유 / 대두, 밀, 우유 함유")이 전부
+// "이 제품은" 앞에서 잘려나가 정확히 direct로, "땅콩"만 cross로
+// 분리된다 — 더는 트레이드오프가 아니라 완전히 맞는 결과다.
+Deno.test("item1: '/'로 이어붙인 섹션도 이제 정확히 분리된다(3차 리뷰로 트레이드오프 해소)", () => {
   const e = extractStatements({
     ingredientsText: "밀가루, 설탕, 우유 / 대두, 밀, 우유 함유 / 이 제품은 땅콩을 사용한 제품과 같은 제조시설에서 제조",
     allergenStatement: null,
@@ -85,8 +91,7 @@ Deno.test("item1: '/'로 이어붙인 섹션 — 쉼표 없는 경계는 direct 
   assertEquals(byId.get("FOOD-006"), "direct"); // 밀
   assertEquals(byId.get("FOOD-005"), "direct"); // 대두
   assertEquals(byId.get("FOOD-002"), "direct"); // 우유
-  // 미탐은 아니다 — 여전히 caution으로 이어지는 direct로 잡힌다.
-  assertEquals(byId.get("FOOD-004"), "direct"); // 땅콩(cross가 아니라 direct로 남음)
+  assertEquals(byId.get("FOOD-004"), "cross_contamination"); // 땅콩
 });
 
 // ---- 2) 구분자 확장, 제로폭 문자, 함유/포함 접미사 ----

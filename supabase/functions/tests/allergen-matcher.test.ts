@@ -82,9 +82,13 @@ Deno.test("10. crossContaminationStatement 매칭", () => {
   }
 });
 
-Deno.test("11. 원재료 본문에 label_context 용어만 있으면 매칭하지 않는다", () => {
-  assertEquals(ids(match("알류")), []);
-  assertEquals(ids(match("조개류")), []);
+// [S2 리뷰 3차 수정, 룰링 R12] label_context 용어는 더는 "함유 절
+// 안에서만" 매칭되지 않는다 — exact_token과 동일하게 원자 토큰 정확
+// 일치로 어디서든 매칭된다(구조적으로 N-class 미탐을 없애기 위함).
+// 이 테스트는 그 예전 제약을 검증했던 것이라 반대로 뒤집는다.
+Deno.test("11. 원재료 본문의 label_context 용어도 원자 토큰 정확 일치면 direct로 매칭된다(R12)", () => {
+  assertEquals(ids(match("알류")), ["FOOD-001"]);
+  assertEquals(ids(match("조개류")), ["FOOD-013"]);
 });
 
 Deno.test("12. 아황산류 관련 별칭 매칭", () => {
