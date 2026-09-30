@@ -26,7 +26,7 @@ export default async function ServiceLayout({ children }: LayoutProps<"/">) {
         <Link href="/" className={styles.navItem}>
           홈
         </Link>
-        <Link href="/history" className={styles.navItem}>
+        <Link href="/analyses" className={styles.navItem}>
           이력
         </Link>
         <Link href="/settings" className={styles.navItem}>

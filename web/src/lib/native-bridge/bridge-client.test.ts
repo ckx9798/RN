@@ -186,4 +186,36 @@ describe("createBridgeClient", () => {
     client.dispose();
     delete (window as unknown as { ReactNativeWebView?: unknown }).ReactNativeWebView;
   });
+
+  it("dispose() 이후에는 메시지를 받아도 아무 것도 하지 않는다(리스너 제거)", async () => {
+    (window as unknown as { ReactNativeWebView: { postMessage: () => void } }).ReactNativeWebView = {
+      postMessage: () => {},
+    };
+
+    const removeEventListenerSpy = vi.spyOn(window, "removeEventListener");
+
+    const client = createBridgeClient(window, { createId: () => "req-dispose-1" });
+    const outcomePromise = client.requestScan();
+
+    client.dispose();
+
+    expect(removeEventListenerSpy).toHaveBeenCalledWith("message", expect.any(Function));
+
+    // dispose 시점에 대기 중이던 요청은 cancelled로 정리된다.
+    await expect(outcomePromise).resolves.toEqual({ kind: "cancelled" });
+
+    // 리스너가 제거됐으므로 이후 같은 requestId로 메시지를 보내도 예외
+    // 없이 무시된다. 대기 중인 요청이 없으므로 아무 상태도 바뀌지 않는다.
+    expect(() =>
+      dispatchNativeMessage(window, {
+        version: 1,
+        type: "SCAN_RESULT",
+        requestId: "req-dispose-1",
+        payload: scanPayload(),
+      }),
+    ).not.toThrow();
+
+    removeEventListenerSpy.mockRestore();
+    delete (window as unknown as { ReactNativeWebView?: unknown }).ReactNativeWebView;
+  });
 });

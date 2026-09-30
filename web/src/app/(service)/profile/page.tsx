@@ -12,16 +12,18 @@ import styles from "./profile.module.css";
 
 export default async function ProfilePage() {
   const supabase = await createServerSupabase();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getClaims();
 
-  if (userError || !userData.user) {
+  if (error || !data) {
     redirect("/login");
   }
+
+  const userId = data.claims.sub;
 
   const [allergens, diseaseCategoryGroups, selection] = await Promise.all([
     fetchAllergenStandards(supabase),
     fetchDiseaseCategoryGroups(supabase),
-    fetchMyProfileSelection(supabase, userData.user.id),
+    fetchMyProfileSelection(supabase, userId),
   ]);
 
   const otherNote =
