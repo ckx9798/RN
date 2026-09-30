@@ -28,7 +28,16 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "라벨의 원재료와 알레르기 표시를 읽기 위해 카메라를 사용합니다. 사진은 기기 밖으로 전송되지 않습니다.",
+          "microphonePermission": "이 앱은 마이크를 사용하지 않습니다.",
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-dev-client"
     ],
     "experiments": {
       "typedRoutes": true,
