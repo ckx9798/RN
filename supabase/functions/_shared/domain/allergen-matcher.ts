@@ -9,17 +9,17 @@
 //   5. 교차혼입 문구
 //   6. 오탐 가능성이 있는 간접 별칭 (confidence: possible)
 //
-// [S2 리뷰 2차 수정 — 구조 변경]
-//   - direct 판정은 ingredientsText(본문 토크나이저) + allergenStatement
-//     (문장 토크나이저) + crossContaminationStatement 중 교차혼입 지배
-//     항목 목록을 뺀 나머지(문장 토크나이저)를 모두 훑는다. 호출자가
-//     crossContaminationStatement를 직접 줬을 때도(추출을 거치지 않아도)
-//     label-statements.ts의 splitCrossClauses로 같은 절 분리를 적용한다.
+// [S2 4차 리뷰, 룰링 R11·R13] 모든 필드(ingredientsText, allergenStatement,
+// crossContaminationStatement)를 같은 방식으로 처리한다:
+//   - cross-spans.ts(R13)가 교차혼입 트리거에 맞닿은 "용어 토큰 목록"만
+//     교차혼입 항목으로 떼어내고, 나머지 텍스트는 전부 direct로 훑는다.
+//   - direct/cross 모두 원재료 원자 토큰·문장 토큰·공백 포함 용어·공백으로
+//     갈라진 label_context를 전부 적용한다(scanText).
 //   - cross는 순수 가산적이다: 같은 allergenId가 direct로도 잡히면
 //     cross 결과는 버린다(절대 direct를 cross로 격하하지 않는다).
 
 import { flattenAtoms, isDigit, NUMERIC_PERCENT, parseIngredients } from "./ingredient-parser.ts";
-import { splitCrossClauses } from "./label-statements.ts";
+import { splitCrossSpans, stripParticle } from "./cross-spans.ts";
 import { normalizeText } from "./normalize.ts";
 import type { AllergenMatch, AllergenTerm, IngredientNode } from "./types.ts";
 
@@ -35,7 +35,6 @@ export const NEGATIVE_COMPOUNDS: Record<string, string[]> = {
   "우육": ["새우육"],
 };
 
-const PARTICLES = ["으로", "을", "를", "이", "가", "와", "과", "및", "등", "은", "는", "로"];
 
 /**
  * 용어 사이를 잇는 접속 조사. "밀과콩함유", "게와새우함유"처럼 공백·쉼표
@@ -58,14 +57,6 @@ function truncateAtCueWord(token: string): string {
   return token;
 }
 
-function stripParticle(token: string): string {
-  for (const particle of PARTICLES) {
-    if (token.length > particle.length && token.endsWith(particle)) {
-      return token.slice(0, token.length - particle.length);
-    }
-  }
-  return token;
-}
 
 /** 접속 조사로 쪼갠 조각들(조사 제거까지 적용). 원 토큰은 포함하지 않는다. */
 function splitConnectivePieces(token: string): string[] {
@@ -151,7 +142,7 @@ function collectPhraseCandidates(nodes: IngredientNode[]): string[] {
   return candidates;
 }
 
-function matchIngredientAtoms(text: string, terms: AllergenTerm[]): Candidate[] {
+function matchIngredientAtoms(text: string, terms: AllergenTerm[], kind: AllergenMatch["kind"]): Candidate[] {
   const nodes = parseIngredients(text);
   const exactAtoms = flattenAtoms(nodes);
   const phraseCandidates = collectPhraseCandidates(nodes);
@@ -162,9 +153,8 @@ function matchIngredientAtoms(text: string, terms: AllergenTerm[]): Candidate[] 
 
     // R12: label_context도 exact_token과 동일하게 원자 토큰 정확 일치로
     // 매칭한다(예: "알류", "조개류", "아황산류") — 더는 "함유 절 안에서만"
-    // 이라는 문맥 제약을 두지 않는다. kind는 항상 'direct'다: 이 텍스트는
-    // 이미 교차혼입 지배 항목 목록이 빠진 나머지이므로, 여기서 찾으면
-    // 곧 direct를 뜻한다(순수 가산적 cross는 매칭 함수 바깥에서 처리).
+    // 이라는 문맥 제약을 두지 않는다. kind는 호출자(scanText)가 R13으로
+    // 정한 값을 그대로 쓴다.
     if (term.matchType === "exact_token" || term.matchType === "label_context") {
       for (const atom of exactAtoms) {
         if (atom === normalizedTerm) {
@@ -172,7 +162,7 @@ function matchIngredientAtoms(text: string, terms: AllergenTerm[]): Candidate[] 
             allergenId: term.allergenId,
             term: term.term,
             matchedText: atom,
-            kind: "direct",
+            kind,
             matchType: term.matchType,
             confidence: term.confidence,
           });
@@ -189,7 +179,7 @@ function matchIngredientAtoms(text: string, terms: AllergenTerm[]): Candidate[] 
         allergenId: term.allergenId,
         term: term.term,
         matchedText: candidate,
-        kind: "direct",
+        kind,
         matchType: term.matchType,
         confidence: term.confidence,
       });
@@ -313,30 +303,6 @@ function matchStatement(
   return dedupeLongerPhraseWins(candidates);
 }
 
-/**
- * crossContaminationStatement 필드를 절 단위로 분리해 매칭한다. 이
- * 필드는 label-statements.ts의 추출 결과일 수도 있고(이미 지배 항목
- * 목록만 담겨 있다) 호출자가 원문 그대로 줬을 수도 있다(F1 사례처럼
- * 함유 절이 섞여 있을 수 있다) — 출처와 무관하게 동일한 절 분리를
- * 적용해, 트리거가 지배하는 항목만 cross로, 나머지는 direct로 본다.
- */
-function matchCrossContaminationStatement(text: string, terms: AllergenTerm[]): Candidate[] {
-  const { crossSpans, remainder } = splitCrossClauses(text);
-  const candidates: Candidate[] = [];
-
-  if (crossSpans.length > 0) {
-    candidates.push(...matchStatement(crossSpans.join(", "), terms, "cross_contamination"));
-    if (remainder.length > 0) {
-      candidates.push(...matchStatement(remainder, terms, "direct"));
-    }
-  } else {
-    // 트리거를 하나도 못 찾았으면 필드 전체를 기존처럼 교차혼입으로 본다.
-    candidates.push(...matchStatement(text, terms, "cross_contamination"));
-  }
-
-  return candidates;
-}
-
 /** (allergenId, kind, source) 별로 confirmed 우선 1건으로 합친다. */
 function mergeCandidates(
   candidates: Candidate[],
@@ -376,20 +342,99 @@ function suppressCrossWhenDirectExists(matches: AllergenMatch[]): AllergenMatch[
   return matches.filter((m) => m.kind !== "cross_contamination" || !directIds.has(m.allergenId));
 }
 
-export function matchAllergens(input: MatchInput, terms: AllergenTerm[]): AllergenMatch[] {
+/**
+ * 공백을 포함한 용어("sulfur dioxide")는 어떤 토크나이저로도 한 토큰이
+ * 되지 않을 수 있으므로 정규화한 텍스트 전체에서 부분 문자열로 찾는다.
+ */
+function matchMultiWordTerms(text: string, terms: AllergenTerm[], kind: AllergenMatch["kind"]): Candidate[] {
+  const normalized = normalizeText(text);
+  return terms
+    .filter((term) => term.term.includes(" ") && normalized.includes(normalizeText(term.term)))
+    .map((term) => ({
+      allergenId: term.allergenId,
+      term: term.term,
+      matchedText: normalizeText(term.term),
+      kind,
+      matchType: term.matchType,
+      confidence: term.confidence,
+    }));
+}
+
+/**
+ * label_context 용어(알류, 조개류, 아황산류)는 OCR이 "알 류"처럼 한 칸
+ * 띄워 읽는 경우가 있어, 공백 외 구분자로 나눈 조각의 공백을 모두 지운
+ * 문자열에서 부분 문자열로도 찾는다.
+ */
+function matchCollapsedLabelContext(text: string, terms: AllergenTerm[], kind: AllergenMatch["kind"]): Candidate[] {
+  const chunks = normalizeText(text.replace(/\n/g, ",")).split(/[,、·ㆍᆞ‧/()[\]:;|.\-+&]/).map((c) => c.replace(/ /g, ""));
   const candidates: Candidate[] = [];
-
-  if (input.ingredientsText && input.ingredientsText.trim().length > 0) {
-    candidates.push(...matchIngredientAtoms(input.ingredientsText, terms));
+  for (const term of terms) {
+    if (term.matchType !== "label_context") continue;
+    const normalizedTerm = normalizeText(term.term);
+    const chunk = chunks.find((c) => c.includes(normalizedTerm));
+    if (!chunk) continue;
+    candidates.push({
+      allergenId: term.allergenId,
+      term: term.term,
+      matchedText: normalizedTerm,
+      kind,
+      matchType: term.matchType,
+      confidence: term.confidence,
+    });
   }
+  return candidates;
+}
 
-  if (input.allergenStatement && input.allergenStatement.trim().length > 0) {
-    candidates.push(...matchStatement(input.allergenStatement, terms, "direct"));
+/**
+ * 한 텍스트를 가능한 모든 방법(원재료 원자 토큰, 문장 토큰, 공백 포함
+ * 용어, 공백으로 갈라진 label_context)으로 훑는다. statementFirst면 문장
+ * 토큰 결과를 앞에 둔다(병합 시 처음 일치 원문·matchType이 남는다).
+ */
+function scanText(
+  text: string,
+  terms: AllergenTerm[],
+  kind: AllergenMatch["kind"],
+  statementFirst: boolean,
+): Candidate[] {
+  if (text.trim().length === 0) return [];
+  const atoms = matchIngredientAtoms(text, terms, kind);
+  const statement = matchStatement(text, terms, kind);
+  return [
+    ...(statementFirst ? [...statement, ...atoms] : [...atoms, ...statement]),
+    ...matchMultiWordTerms(text, terms, kind),
+    ...matchCollapsedLabelContext(text, terms, kind),
+  ];
+}
+
+/**
+ * 필드 하나를 R13으로 나눠 훑는다: 교차혼입 지배 항목만 cross, 나머지는
+ * 전부 direct. 어느 필드든 같은 규칙을 쓴다(필드 출처와 무관).
+ * crossContaminationStatement 필드에 트리거가 하나도 없으면 필드 전체를
+ * 교차혼입 목록으로 본다(호출자가 "땅콩, 게"처럼 목록만 준 경우).
+ */
+function scanField(
+  text: string | null,
+  terms: AllergenTerm[],
+  termStrings: string[],
+  options: { crossField: boolean; statementFirst: boolean },
+): Candidate[] {
+  if (!text || text.trim().length === 0) return [];
+  const split = splitCrossSpans(text, termStrings);
+  if (options.crossField && !split.hasTrigger) {
+    return scanText(text, terms, "cross_contamination", true);
   }
+  return [
+    ...scanText(split.directText, terms, "direct", options.statementFirst),
+    ...split.crossItems.flatMap((item) => scanText(item, terms, "cross_contamination", true)),
+  ];
+}
 
-  if (input.crossContaminationStatement && input.crossContaminationStatement.trim().length > 0) {
-    candidates.push(...matchCrossContaminationStatement(input.crossContaminationStatement, terms));
-  }
-
+export function matchAllergens(input: MatchInput, terms: AllergenTerm[]): AllergenMatch[] {
+  const termStrings = terms.map((term) => normalizeText(term.term));
+  const candidates = [
+    ...scanField(input.ingredientsText, terms, termStrings, { crossField: false, statementFirst: false }),
+    ...scanField(input.allergenStatement, terms, termStrings, { crossField: false, statementFirst: true }),
+    ...scanField(input.crossContaminationStatement, terms, termStrings, { crossField: true, statementFirst: true }),
+  ];
   return suppressCrossWhenDirectExists(mergeCandidates(candidates, input.source));
 }

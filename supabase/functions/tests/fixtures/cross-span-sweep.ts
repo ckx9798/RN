@@ -1,0 +1,95 @@
+// 4차 리뷰(룰링 R13) 스윕 사례. 리뷰어 스윕 입력(sweep1/2/3.json) 77건을
+// 그대로 옮겼고, 기대값이 R13과 다른 10건은 R13에 맞춰 바꾸고 `why`에
+// 이유를 남겼다. d = direct로 잡혀야 하는 기준, x = cross로만 잡혀야
+// 하는 기준. 둘 다 아닌 기준이 잡히면 오탐으로 실패한다.
+
+export type CrossSpanSweepCase = {
+  n: string;
+  i: string;
+  raw: string;
+  a: string | null;
+  c: string | null;
+  d: string[];
+  x: string[];
+  why?: string;
+};
+
+export const CROSS_SPAN_SWEEP_CASES: CrossSpanSweepCase[] = [
+  {"n": "S01 1line noheader short", "i": "밀가루, 설탕, 땅콩과 같은 제조시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "S02 1line bracket then short", "i": "소맥분(미국산), 정제염, 대두유, 새우와 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-005", "FOOD-006"], "x": ["FOOD-010"]},
+  {"n": "S03 raw dup + c field", "i": "밀가루, 설탕", "raw": "원재료명: 밀가루, 설탕\n이 제품은 땅콩, 새우를 사용한 제품과 같은 제조시설에서 제조", "a": null, "c": "이 제품은 땅콩, 새우를 사용한 제품과 같은 제조시설에서 제조", "d": ["FOOD-006"], "x": ["FOOD-004", "FOOD-010"]},
+  {"n": "S04 raw dup of ingredientsText", "i": "밀가루, 설탕\n이 제품은 땅콩, 새우를 사용한 제품과 같은 제조시설에서 제조", "raw": "밀가루, 설탕\n이 제품은 땅콩, 새우를 사용한 제품과 같은 제조시설에서 제조", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-004", "FOOD-010"]},
+  {"n": "S05 phrases", "i": "난백분, 탈지분유, 복숭아농축액, 이산화황(보존료)", "raw": "", "a": null, "c": null, "d": ["FOOD-001", "FOOD-002", "FOOD-014", "FOOD-019"], "x": []},
+  {"n": "S06 slash stmt trigger-first", "i": "설탕, 정제수", "raw": "", "a": "알레르기 유발물질: 우유, 대두, 밀, 쇠고기 함유 / 같은 제조시설에서 메밀, 땅콩, 호두, 게, 새우, 오징어, 고등어, 조개류(굴, 전복, 홍합 포함), 복숭아, 토마토, 닭고기, 돼지고기, 아황산류를 사용한 제품을 제조하고 있습니다", "c": null, "d": ["FOOD-002", "FOOD-005", "FOOD-006", "FOOD-018"], "x": ["FOOD-003", "FOOD-004", "FOOD-008", "FOOD-009", "FOOD-010", "FOOD-011", "FOOD-012", "FOOD-013", "FOOD-014", "FOOD-015", "FOOD-016", "FOOD-017", "FOOD-019"]},
+  {"n": "S06b same in ingredientsText", "i": "설탕, 정제수\n알레르기 유발물질: 우유, 대두, 밀, 쇠고기 함유 / 같은 제조시설에서 메밀, 땅콩, 호두, 게, 새우, 오징어, 고등어, 조개류(굴, 전복, 홍합 포함), 복숭아, 토마토, 닭고기, 돼지고기, 아황산류를 사용한 제품을 제조하고 있습니다", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-005", "FOOD-006", "FOOD-018"], "x": ["FOOD-003", "FOOD-004", "FOOD-008", "FOOD-009", "FOOD-010", "FOOD-011", "FOOD-012", "FOOD-013", "FOOD-014", "FOOD-015", "FOOD-016", "FOOD-017", "FOOD-019"]},
+  {"n": "S08 bracket compound then short", "i": "혼합분유[탈지분유, 유청], 코코아분말, 땅콩, 호두와 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-002"], "x": ["FOOD-004", "FOOD-008"]},
+  {"n": "S09 ramen multiline", "i": "원재료명: 소맥분(밀:미국산), 팜유, 설탕, 전분, 쇠고기엑기스분말, 새우분말, 정제소금\n우유, 대두, 밀, 쇠고기, 새우 함유\n이 제품은 계란, 땅콩, 게, 오징어, 고등어, 조개류, 돼지고기, 닭고기, 토마토, 복숭아와 같은 제조시설에서 제조하고 있습니다.", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-005", "FOOD-006", "FOOD-010", "FOOD-018"], "x": ["FOOD-001", "FOOD-004", "FOOD-009", "FOOD-011", "FOOD-012", "FOOD-013", "FOOD-014", "FOOD-015", "FOOD-016", "FOOD-017"]},
+  {"n": "S10 ramen single-line", "i": "원재료명: 소맥분(밀:미국산), 팜유, 설탕, 새우분말, 정제소금 우유, 대두, 밀, 새우 함유 이 제품은 계란, 땅콩, 게와 같은 제조시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-005", "FOOD-006", "FOOD-010"], "x": ["FOOD-001", "FOOD-004", "FOOD-009"]},
+  {"n": "S11 trigger-first 등을", "i": "밀가루\n같은 시설에서 땅콩, 호두 등을 사용한 제품 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-004", "FOOD-008"]},
+  {"n": "S12 trigger-first no USED then ingredients 1line", "i": "이 제품은 같은 제조시설에서 제조합니다 원재료: 밀가루, 우유, 대두", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-005", "FOOD-006"], "x": []},
+  {"n": "S12b trigger-first other verb then ingredients", "i": "같은 시설에서 땅콩, 호두를 가공합니다 원재료명: 밀가루, 우유", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-006"], "x": ["FOOD-004", "FOOD-008"]},
+  {"n": "S12c 혼입가능: then ingredients 1line", "i": "혼입 가능: 땅콩 원재료: 밀가루, 우유", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "S14 bracket short-form list", "i": "초콜릿칩(설탕, 전지분유, 땅콩과 같은 시설에서 제조), 밀가루", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-002", "FOOD-004"], "why": "R13: 전지분유는 용어와 정확히 같은 토큰이고 땅콩에 맞닿아 있다"},
+  {"n": "S14b bracket full-form list", "i": "초콜릿칩(설탕, 전지분유, 땅콩을 사용한 제품과 같은 제조시설에서 제조), 밀가루", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-002", "FOOD-004"], "why": "R13: 전지분유는 용어와 정확히 같은 토큰이고 땅콩에 맞닿아 있다"},
+  {"n": "S18 zero-width", "i": "우​유, 대⁠두, 밀­가루 함유", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-005", "FOOD-006"], "x": []},
+  {"n": "S19 fullwidth header", "i": "원재료명：밀가루，설탕，땅콩과 같은 제조시설", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "S19b fullwidth noheader", "i": "밀가루，설탕，땅콩과 같은 제조시설", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "S24 bracket cue then short", "i": "우유(국산) 함유, 땅콩, 대두와 같은 시설", "raw": "", "a": null, "c": null, "d": ["FOOD-002"], "x": ["FOOD-004", "FOOD-005"]},
+  {"n": "S25 있으며 trigger-first", "i": "정제수\n이 제품은 알류, 우유, 밀을 함유하고 있으며 같은 제조시설에서 땅콩을 사용한 제품을 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-001", "FOOD-002", "FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "S28 two short triggers", "i": "정제수\n알류 함유, 땅콩과 같은 시설, 새우와 동일한 제조시설에서 생산", "raw": "", "a": null, "c": null, "d": ["FOOD-001"], "x": ["FOOD-004", "FOOD-010"]},
+  {"n": "S30 혼입가능성 있음: list", "i": "밀가루, 설탕\n혼입 가능성 있음: 땅콩, 호두", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-004", "FOOD-008"]},
+  {"n": "S30b 1line 혼입가능성", "i": "밀가루, 설탕, 혼입 가능성: 땅콩", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "S31 all-cross", "i": "정제수\n이 제품은 우유, 대두, 밀, 땅콩, 호두, 복숭아와 같은 제조시설에서 제조", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-002", "FOOD-004", "FOOD-005", "FOOD-006", "FOOD-008", "FOOD-014"]},
+  {"n": "S33 ingr cross + a field", "i": "밀가루, 설탕, 버터\n땅콩, 게를 사용한 제품과 같은 제조시설에서 제조", "raw": "", "a": "밀, 우유 함유", "c": null, "d": ["FOOD-002", "FOOD-006"], "x": ["FOOD-004", "FOOD-009"]},
+  {"n": "S37 buckwheat noodle", "i": "메밀국수(메밀가루 30%, 소맥분), 간장", "raw": "", "a": null, "c": null, "d": ["FOOD-003", "FOOD-005", "FOOD-006"], "x": []},
+  {"n": "S38 새우육수", "i": "새우육수, 설탕", "raw": "", "a": null, "c": null, "d": ["FOOD-010"], "x": []},
+  {"n": "S41 header colon 및", "i": "원재료명 : 밀가루(밀 100%), 땅콩 및 호두와 같은 제조시설", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-004", "FOOD-008"]},
+  {"n": "S43 bracket in cross list", "i": "정제수\n이 제품은 조개류(굴, 전복), 새우와 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-010", "FOOD-013"]},
+  {"n": "S43b bracket last in cross list", "i": "정제수\n땅콩, 조개류(굴)와 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-004", "FOOD-013"]},
+  {"n": "S44 full-form bracket in list", "i": "정제수\n땅콩, 조개류(굴, 홍합)를 사용한 제품과 같은 제조시설에서 제조", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-004", "FOOD-013"]},
+  {"n": "S45 sulfite label ctx cross", "i": "건포도, 설탕\n아황산류와 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-019"]},
+  {"n": "S46 sulfite direct 1line before cross", "i": "건조과일(아황산류), 설탕, 호두와 같은 시설", "raw": "", "a": null, "c": null, "d": ["FOOD-019"], "x": ["FOOD-008"]},
+  {"n": "S47 egg label ctx + ocr noise", "i": "밀가루 , 알 류 , 우유 함유", "raw": "", "a": null, "c": null, "d": ["FOOD-001", "FOOD-002", "FOOD-006"], "x": []},
+  {"n": "S48 OCR period as comma", "i": "밀가루. 설탕. 대두. 땅콩과 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-005", "FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "S49 dash separator", "i": "밀가루 - 설탕 - 땅콩과 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "S50 pipe separator header", "i": "원재료 | 밀가루, 우유 | 땅콩과 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "S51 cross before ingredients 1line full-form", "i": "땅콩을 사용한 제품과 같은 제조시설에서 제조 밀가루, 우유", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "S52 allergen stmt with 알류 separate line from cue", "i": "밀가루\n알레르기 표시\n알류\n우유\n(함유)", "raw": "", "a": null, "c": null, "d": ["FOOD-001", "FOOD-002", "FOOD-006"], "x": []},
+  {"n": "S53 raw only full label", "i": "", "raw": "원재료명: 밀가루, 설탕, 버터\n알류, 우유, 밀 함유\n이 제품은 땅콩, 새우를 사용한 제품과 같은 제조시설에서 제조", "a": null, "c": null, "d": ["FOOD-001", "FOOD-002", "FOOD-006"], "x": ["FOOD-004", "FOOD-010"]},
+  {"n": "S54 ingr + raw full label (realistic app)", "i": "밀가루, 설탕, 버터", "raw": "원재료명: 밀가루, 설탕, 버터\n알류, 우유, 밀 함유\n이 제품은 땅콩, 새우를 사용한 제품과 같은 제조시설에서 제조", "a": null, "c": null, "d": ["FOOD-001", "FOOD-002", "FOOD-006"], "x": ["FOOD-004", "FOOD-010"]},
+  {"n": "S55 ingr + a + c + raw (fully populated)", "i": "밀가루, 설탕, 버터", "raw": "원재료명: 밀가루, 설탕, 버터\n알류, 우유, 밀 함유\n이 제품은 땅콩, 새우를 사용한 제품과 같은 제조시설에서 제조", "a": "알류, 우유, 밀 함유", "c": "이 제품은 땅콩, 새우를 사용한 제품과 같은 제조시설에서 제조", "d": ["FOOD-001", "FOOD-002", "FOOD-006"], "x": ["FOOD-004", "FOOD-010"]},
+  {"n": "S56 raw cross with 함유 cue in same sentence", "i": "밀가루", "raw": "밀 함유, 땅콩, 새우를 사용한 제품과 같은 제조시설에서 제조", "a": null, "c": "땅콩, 새우를 사용한 제품과 같은 제조시설에서 제조", "d": ["FOOD-006"], "x": ["FOOD-004", "FOOD-010"]},
+  {"n": "T01 trigger-first two 사용한", "i": "밀가루\n같은 시설에서 우유를 사용한 제품, 땅콩을 사용한 제품을 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-004", "FOOD-006"], "x": ["FOOD-002"], "why": "R13: '사용한'(용어 아님)에서 목록이 끝난다"},
+  {"n": "T02 trigger-first 동일한 제조시설", "i": "정제수, 설탕\n본 제품은 동일한 제조시설에서 난류, 우유, 메밀을 사용한 제품을 생산하고 있습니다", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-003"], "x": [], "why": "R13: 첫 토큰 '난류'가 용어가 아니라 목록이 비어 있다"},
+  {"n": "T03 new-rule NC 새우육 우육", "i": "혼합분말(새우육, 설탕), 우육엑기스", "raw": "", "a": null, "c": null, "d": ["FOOD-010", "FOOD-018"], "x": []},
+  {"n": "T04 NC 메밀가루와밀가루 stmt", "i": "정제수", "raw": "", "a": "메밀가루와밀가루 함유", "c": null, "d": ["FOOD-003", "FOOD-006"], "x": []},
+  {"n": "T05 NC 메밀전분 only", "i": "메밀전분, 감자전분", "raw": "", "a": null, "c": null, "d": ["FOOD-003"], "x": []},
+  {"n": "T06 alg header next line", "i": "밀가루\n알레르기 유발물질\n우유, 대두, 조개류", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-005", "FOOD-006", "FOOD-013"], "x": []},
+  {"n": "T07 함 유 split", "i": "밀가루\n우유, 게 함 유", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-006", "FOOD-009"], "x": []},
+  {"n": "T08 zwj inside 조개류", "i": "밀가루\n조‍개⁠류 함유", "raw": "", "a": null, "c": null, "d": ["FOOD-006", "FOOD-013"], "x": []},
+  {"n": "T09 BOM + NBSP", "i": "﻿밀가루, 우유 함유", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-006"], "x": []},
+  {"n": "T10 short-form 3 triggers", "i": "정제수\n땅콩과 같은 시설, 호두와 같은 시설, 게와 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-004", "FOOD-008", "FOOD-009"]},
+  {"n": "T11 two sentences cross + direct 알류", "i": "설탕\n이 제품은 땅콩을 사용한 제품과 같은 제조시설에서 제조. 알류 함유", "raw": "", "a": null, "c": null, "d": ["FOOD-001"], "x": ["FOOD-004"]},
+  {"n": "T12 label_context both direct and cross", "i": "설탕, 난백분\n알류와 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-001"], "x": []},
+  {"n": "T13 sausage", "i": "돼지고기 70%(국산), 닭고기, 정제수, 전분, 대두단백, 아질산나트륨, 카제인나트륨", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-005", "FOOD-016", "FOOD-017"], "x": []},
+  {"n": "T14 bread multiline", "i": "밀가루(밀:미국산), 설탕, 버터(우유), 계란, 이스트\n[알레르기 유발물질: 밀, 우유, 알류 함유]\n[이 제품은 대두, 땅콩, 호두를 사용한 제품과 같은 제조시설에서 제조하고 있습니다]", "raw": "", "a": null, "c": null, "d": ["FOOD-001", "FOOD-002", "FOOD-006"], "x": ["FOOD-004", "FOOD-005", "FOOD-008"]},
+  {"n": "T15 bread single-line brackets", "i": "밀가루(밀:미국산), 설탕, 버터(우유), 계란 [알레르기 유발물질: 밀, 우유, 알류 함유] [이 제품은 대두, 땅콩을 사용한 제품과 같은 제조시설에서 제조]", "raw": "", "a": null, "c": null, "d": ["FOOD-001", "FOOD-002", "FOOD-006"], "x": ["FOOD-004", "FOOD-005"]},
+  {"n": "T16 sauce with tomato peach sulfite", "i": "토마토페이스트, 복숭아퓨레, 설탕, 메타중아황산나트륨, 굴소스(굴추출물)", "raw": "", "a": null, "c": null, "d": ["FOOD-014", "FOOD-015", "FOOD-019"], "x": []},
+  {"n": "T17 canned tuna cross", "i": "참치, 대두유, 정제소금\n고등어, 게, 새우, 오징어와 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-005"], "x": ["FOOD-009", "FOOD-010", "FOOD-011", "FOOD-012"]},
+  {"n": "T18 1line tuna header", "i": "원재료명: 참치, 대두유, 정제소금, 고등어, 게, 새우와 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-005"], "x": ["FOOD-009", "FOOD-010", "FOOD-012"]},
+  {"n": "T19 snack English shrimp crab", "i": "Wheat Flour, Shrimp, Crab Extract, Squid", "raw": "", "a": null, "c": null, "d": ["FOOD-009", "FOOD-010", "FOOD-011"], "x": [], "why": "Crab Extract의 crab은 FOOD-009 exact_token — 스윕 기대값 누락"},
+  {"n": "T20 cross field raw-like with 함유", "i": "", "raw": "", "a": null, "c": "우유, 대두 함유. 이 제품은 땅콩과 같은 시설에서 제조", "d": ["FOOD-002", "FOOD-005"], "x": ["FOOD-004"]},
+  {"n": "T21 동일 시설 no 한", "i": "밀가루\n동일 시설에서 땅콩 사용 제품 생산", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "T22 콜론 after 원재료명 list then short", "i": "원재료명:밀가루,우유,땅콩과같은시설에서제조", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-002", "FOOD-004"], "why": "R13: '원재료명:밀가루'는 용어와 같은 토큰이 아니다, 우유는 맞닿은 용어"},
+  {"n": "T23 no-spaces trigger-first", "i": "밀가루\n같은제조시설에서알류,조개류를사용한제품을제조", "raw": "", "a": null, "c": null, "d": ["FOOD-006"], "x": ["FOOD-001", "FOOD-013"]},
+  {"n": "T24 cue after cross in same seg", "i": "정제수\n땅콩과 같은 시설에서 제조 우유 함유", "raw": "", "a": null, "c": null, "d": ["FOOD-002"], "x": ["FOOD-004"]},
+  {"n": "T25 ramen soup packet 1line cue before short", "i": "스프: 정제소금, 쇠고기추출물, 새우분말, 대두 함유, 게, 오징어와 같은 시설", "raw": "", "a": null, "c": null, "d": ["FOOD-005", "FOOD-010", "FOOD-018"], "x": ["FOOD-009", "FOOD-011"]},
+  {"n": "T26 short-form with 이 제품은 mid", "i": "밀가루, 우유 이 제품은 땅콩과 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": ["FOOD-002", "FOOD-006"], "x": ["FOOD-004"]},
+  {"n": "T27 쇠고기 in cross after direct 1line", "i": "원재료: 밀가루 쇠고기와 같은 제조시설", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-006", "FOOD-018"], "why": "R13: 공백도 목록 구분자 — '밀가루 쇠고기와'"},
+  {"n": "T28 sulfur dioxide in cross span", "i": "건조살구\nSulfur Dioxide와 같은 시설에서 제조", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-019"]},
+  {"n": "T29 sulfur dioxide direct in body 1line before short", "i": "건조살구, sulfur dioxide, 땅콩과 같은 시설", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-004", "FOOD-019"], "why": "R13: sulfur dioxide는 맞닿은 용어(공백 포함 용어)"},
+  {"n": "T30 음료", "i": "정제수, 복숭아농축액(복숭아:국산), 액상과당, 비타민C", "raw": "", "a": null, "c": null, "d": ["FOOD-014"], "x": []},
+  {"n": "U1 sulfur dioxide trigger-first tail", "i": "같은 시설에서 제조합니다 원재료: 건조살구, sulfur dioxide", "raw": "", "a": null, "c": null, "d": ["FOOD-019"], "x": []},
+  {"n": "U2 sulfur dioxide in bracket short", "i": "건조살구(sulfur dioxide, 땅콩과 같은 시설)", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-004", "FOOD-019"], "why": "R13: 괄호 안 목록, sulfur dioxide는 맞닿은 용어"},
+  {"n": "U3 sulfur dioxide full-form 1line", "i": "건조살구, Sulfur Dioxide, 땅콩을 사용한 제품과 같은 제조시설에서 제조", "raw": "", "a": null, "c": null, "d": [], "x": ["FOOD-004", "FOOD-019"], "why": "R13: sulfur dioxide는 맞닿은 용어"},
+];

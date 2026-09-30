@@ -30,24 +30,19 @@ Deno.test("extractStatements: ingredientsText에서 알레르기 문장 분리(�
   );
 });
 
-Deno.test("extractStatements: ingredientsText에서 교차혼입 절 분리(트리거~문장 끝이 아니라 지배 항목까지만, 규칙 c)", () => {
+Deno.test("extractStatements: ingredientsText에서 교차혼입 문장 분리(범위 판정은 매처가 R13으로)", () => {
   const result = extractStatements({
     ingredientsText: "밀가루, 설탕.이 제품은 땅콩을 사용한 제품과 같은 제조시설에서 제조하고 있습니다.",
     allergenStatement: null,
     crossContaminationStatement: null,
     rawText: "",
   });
-  // 2차 리뷰 구조 변경: 교차혼입 절은 지배 항목 목록(트리거 문구까지)만
-  // 담는다 — 예전처럼 "트리거부터 문장 끝까지"를 통째로 담지 않는다.
-  // 트리거 뒤 텍스트("에서 제조하고 있습니다")는 직접 판정 대상으로
-  // 본문에 남는다.
-  // [3차 리뷰 수정, 룰링 6] "이 제품은"도 절 경계로 보고 그 앞은 잘라낸다
-  // (여기서는 문장 맨 앞이라 잘라낼 게 없어 매칭 결과에는 영향이 없다 —
-  // crossContamination 문자열에서 "이 제품은"이 빠질 뿐이다).
-  assertEquals(result.crossContamination, "땅콩을 사용한 제품과 같은 제조시설");
-  // "이 제품은"은 절 경계 표식으로만 쓰이고 그 자체는 direct 쪽(본문)에
-  // 남는다(룰링 6) — 용어가 아니라서 매칭에는 영향이 없다.
-  assertEquals(result.ingredientsBody, "밀가루, 설탕\n이 제품은 에서 제조하고 있습니다");
+  // [4차 리뷰 수정, R13] 이 함수는 트리거가 있는 문장을 통째로 교차혼입
+  // 필드로 보낸다(브리프 Step 4). 문장 안에서 무엇이 cross인지는
+  // allergen-matcher.ts가 cross-spans.ts(R13)로 판정하고, 지배 목록 밖은
+  // direct로 훑는다 — 필드 경계가 결과를 좌우하지 않는다.
+  assertEquals(result.crossContamination, "이 제품은 땅콩을 사용한 제품과 같은 제조시설에서 제조하고 있습니다");
+  assertEquals(result.ingredientsBody, "밀가루, 설탕");
 });
 
 // [3차 리뷰 수정, 룰링 7] rawText는 더는 "ingredientsText가 아무것도

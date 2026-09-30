@@ -78,9 +78,10 @@ Deno.test("D3: 괄호 안 복합원재료는 교차혼입 지배 목록을 건�
 
 Deno.test("D5/D6: 빈 입력과 crossContaminationStatement 직접 지정도 정상 동작한다", () => {
   assertEquals(run("밀가루, 설탕", "", "", ""), [tag("FOOD-006", D)]);
+  // [4차, R13] "설탕"이 용어가 아니므로 지배 목록은 "땅콩"뿐 — 밀가루는 direct.
   assertEquals(
     run("", "", null, "밀가루, 설탕, 땅콩을 사용한 제품과 같은 제조시설"),
-    [tag("FOOD-004", C), tag("FOOD-006", C)],
+    [tag("FOOD-004", C), tag("FOOD-006", D)],
   );
 });
 
