@@ -63,7 +63,7 @@ npx expo install --fix
 - 네이티브 코드가 있는 라이브러리를 추가하면 개발 빌드 필요 여부를
   확인합니다.
 
-기존 Expo 템플릿의 다음 웹 잔재는 FSD 이동 작업에서 제거합니다.
+기존 Expo 템플릿의 다음 웹 잔재는 Task N1(FSD 이동 작업)에서 제거했습니다.
 
 - `src/components/animated-icon.web.tsx`
 - `src/components/animated-icon.module.css`
