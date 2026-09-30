@@ -9,7 +9,12 @@ import { normalizeName } from "../domain/normalize.ts";
 import type { Nutrients, ProductMatch } from "../domain/types.ts";
 import type { PublicProductRecord } from "./http-client.ts";
 
-export type CachedProduct = ProductMatch & {
+// matchType은 "어떻게 자동/수동으로 선택됐는지"를 나타내는 값이라 조회
+// 방식(report_number 조회, 이름 검색, upsert 등)과는 무관하다 — 저장소
+// 계층에서는 의미가 없으므로 CachedProduct에는 넣지 않는다. 실제 matchType은
+// product-service.ts가 pickAutomatic/사용자 선택 결과를 바탕으로 채운다
+// (toProductMatch 참고).
+export type CachedProduct = Omit<ProductMatch, "matchType"> & {
   normalizedName: string;
   normalizedManufacturer: string | null;
 };
@@ -18,7 +23,23 @@ export interface ProductRepository {
   findByReportNumber(reportNumber: string): Promise<CachedProduct | null>;
   findById(id: string): Promise<CachedProduct | null>;
   searchByName(normalizedName: string, limit: number): Promise<CachedProduct[]>;
-  /** report_number 기준으로 레코드를 병합해 upsert하고, 레코드별 스냅샷을 저장한다. */
+  /**
+   * report_number가 있는 레코드는 report_number 기준으로, 없는 레코드는
+   * (정규화 이름, 정규화 제조사) 조합 기준으로 병합해 upsert하고, 레코드별
+   * 스냅샷을 저장한다. report_number가 없다고 버리지 않는다 — 그래야 같은
+   * 요청 안에서 후보로 남고, 사용자가 `selectedProductId`로 나중에 다시
+   * 조회할 수 있다.
+   *
+   * S4 참고 — `public_api_snapshots.request_fingerprint` 의미가
+   * 브리프 원문("sha-256(service + 정규화 쿼리)")에서 한 단계 달라졌다.
+   * `upsert()`는 이미 조회된 결과 레코드만 받고 원 요청 쿼리 문자열을
+   * 갖고 있지 않으므로, 레코드를 유일하게 식별하는 값(report_number,
+   * 또는 그것이 없으면 정규화 이름+제조사 조합)을 "정규화 쿼리" 대용으로
+   * 사용해 fingerprint를 계산한다. 즉 fingerprint는 "이 API를 어떤
+   * 쿼리로 호출했는가"가 아니라 "이 API가 어떤 제품을 반환했는가"를
+   * 가리킨다 — 캐시 중복 갱신 감지·감사 목적에는 동일하게 쓸 수 있지만,
+   * 원래 사용자가 입력한 검색어를 복원하는 용도로는 쓸 수 없다.
+   */
   upsert(records: PublicProductRecord[]): Promise<CachedProduct[]>;
 }
 
@@ -44,10 +65,7 @@ type ProductRow = {
   fetched_at: string;
 };
 
-function rowToCachedProduct(
-  row: ProductRow,
-  matchType: ProductMatch["matchType"],
-): CachedProduct {
+function rowToCachedProduct(row: ProductRow): CachedProduct {
   const payload = row.normalized_payload ?? {
     foodType: null,
     servingSize: null,
@@ -65,7 +83,6 @@ function rowToCachedProduct(
     ingredientsText: payload.ingredientsText,
     sourceUpdatedAt: row.source_updated_at,
     fetchedAt: row.fetched_at,
-    matchType,
     normalizedName: row.normalized_name,
     normalizedManufacturer: row.normalized_manufacturer,
   };
@@ -111,7 +128,7 @@ export function createSupabaseProductRepository(serviceClient: SupabaseClient): 
         .eq("report_number", reportNumber)
         .maybeSingle();
       if (error || !data) return null;
-      return rowToCachedProduct(data as ProductRow, "report_number");
+      return rowToCachedProduct(data as ProductRow);
     },
 
     async findById(id) {
@@ -121,7 +138,7 @@ export function createSupabaseProductRepository(serviceClient: SupabaseClient): 
         .eq("id", id)
         .maybeSingle();
       if (error || !data) return null;
-      return rowToCachedProduct(data as ProductRow, "user_selected");
+      return rowToCachedProduct(data as ProductRow);
     },
 
     async searchByName(normalizedNameQuery, limit) {
@@ -131,24 +148,47 @@ export function createSupabaseProductRepository(serviceClient: SupabaseClient): 
         .ilike("normalized_name", `%${normalizedNameQuery}%`)
         .limit(limit);
       if (error || !data) return [];
-      return (data as ProductRow[]).map((row) => rowToCachedProduct(row, "name_manufacturer"));
+      return (data as ProductRow[]).map((row) => rowToCachedProduct(row));
     },
 
     async upsert(records) {
-      const byReportNumber = new Map<string, PublicProductRecord[]>();
+      // report_number가 있으면 그것으로, 없으면 (정규화 이름, 정규화
+      // 제조사) 조합으로 레코드를 묶는다 — report_number가 없는 레코드도
+      // 더 이상 버리지 않는다(같은 요청 안에서 후보로 남고, 사용자가
+      // selectedProductId로 나중에 다시 찾을 수 있어야 하므로 실제 행으로
+      // 영속화한다).
+      const reportGroups = new Map<string, PublicProductRecord[]>();
+      const nameGroups = new Map<
+        string,
+        { normalizedName: string; normalizedManufacturer: string | null; records: PublicProductRecord[] }
+      >();
+
       for (const rec of records) {
-        // report_number가 없는 레코드는 product_food_products의 고유
-        // 식별자가 없어 캐시에 저장할 수 없다 — 건너뛴다.
-        if (!rec.reportNumber) continue;
-        const list = byReportNumber.get(rec.reportNumber) ?? [];
-        list.push(rec);
-        byReportNumber.set(rec.reportNumber, list);
+        if (rec.reportNumber) {
+          const list = reportGroups.get(rec.reportNumber) ?? [];
+          list.push(rec);
+          reportGroups.set(rec.reportNumber, list);
+          continue;
+        }
+        const normalizedNameValue = normalizeName(rec.name);
+        const normalizedManufacturerValue = rec.manufacturer ? normalizeName(rec.manufacturer) : null;
+        const key = `${normalizedNameValue}::${normalizedManufacturerValue ?? ""}`;
+        const existing = nameGroups.get(key);
+        if (existing) {
+          existing.records.push(rec);
+        } else {
+          nameGroups.set(key, {
+            normalizedName: normalizedNameValue,
+            normalizedManufacturer: normalizedManufacturerValue,
+            records: [rec],
+          });
+        }
       }
 
       const results: CachedProduct[] = [];
       const fetchedAt = new Date().toISOString();
 
-      for (const [reportNumber, group] of byReportNumber) {
+      for (const [reportNumber, group] of reportGroups) {
         const merged = mergeGroup(group);
         const normalizedNameValue = normalizeName(merged.name);
         const normalizedManufacturerValue = merged.manufacturer
@@ -180,7 +220,7 @@ export function createSupabaseProductRepository(serviceClient: SupabaseClient): 
           .single();
 
         if (error || !data) continue;
-        const cached = rowToCachedProduct(data as ProductRow, "name_manufacturer");
+        const cached = rowToCachedProduct(data as ProductRow);
         results.push(cached);
 
         for (const rec of group) {
@@ -188,6 +228,70 @@ export function createSupabaseProductRepository(serviceClient: SupabaseClient): 
           // upsert()는 이미 조회된 레코드만 받으므로 원 쿼리 문자열이 없다 —
           // 레코드를 유일하게 식별하는 report_number를 정규화 쿼리로 사용한다.
           const fingerprint = await sha256Hex(`${rec.service}:${normalizeName(reportNumber)}`);
+          await serviceClient.from("public_api_snapshots").insert({
+            product_id: cached.id,
+            service_id: rec.service,
+            request_fingerprint: fingerprint,
+            raw_payload: rec.raw,
+            source_updated_at: rec.sourceUpdatedAt,
+            fetched_at: fetchedAt,
+          });
+        }
+      }
+
+      for (const { normalizedName: normalizedNameValue, normalizedManufacturer: normalizedManufacturerValue, records: group } of nameGroups.values()) {
+        const merged = mergeGroup(group);
+        const normalizedPayload: NormalizedPayload = {
+          foodType: merged.foodType,
+          servingSize: merged.servingSize,
+          nutrients: merged.nutrients,
+          ingredientsText: merged.ingredientsText,
+        };
+        const rowPayload = {
+          normalized_name: normalizedNameValue,
+          display_name: merged.name,
+          manufacturer: merged.manufacturer,
+          normalized_manufacturer: normalizedManufacturerValue,
+          normalized_payload: normalizedPayload,
+          source_updated_at: merged.sourceUpdatedAt,
+          fetched_at: fetchedAt,
+        };
+
+        // report_number가 null인 행에는 DB unique 제약이 없으므로(nullable
+        // unique 컬럼) 직접 upsert할 수 없다 — 같은 (정규화 이름, 정규화
+        // 제조사) 조합의 기존 행을 먼저 찾아 있으면 갱신, 없으면 새로
+        // 삽입해 중복을 막는다.
+        let existingQuery = serviceClient
+          .from("public_food_products")
+          .select("*")
+          .is("report_number", null)
+          .eq("normalized_name", normalizedNameValue);
+        existingQuery = normalizedManufacturerValue
+          ? existingQuery.eq("normalized_manufacturer", normalizedManufacturerValue)
+          : existingQuery.is("normalized_manufacturer", null);
+        const { data: existingRow } = await existingQuery.maybeSingle();
+
+        const { data, error } = existingRow
+          ? await serviceClient
+            .from("public_food_products")
+            .update(rowPayload)
+            .eq("id", (existingRow as ProductRow).id)
+            .select("*")
+            .single()
+          : await serviceClient
+            .from("public_food_products")
+            .insert({ report_number: null, ...rowPayload })
+            .select("*")
+            .single();
+
+        if (error || !data) continue;
+        const cached = rowToCachedProduct(data as ProductRow);
+        results.push(cached);
+
+        for (const rec of group) {
+          const fingerprint = await sha256Hex(
+            `${rec.service}:${normalizedNameValue}::${normalizedManufacturerValue ?? ""}`,
+          );
           await serviceClient.from("public_api_snapshots").insert({
             product_id: cached.id,
             service_id: rec.service,

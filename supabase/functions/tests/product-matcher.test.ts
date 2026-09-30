@@ -32,7 +32,6 @@ function product(overrides: Partial<CachedProduct> = {}): CachedProduct {
     ingredientsText: null,
     sourceUpdatedAt: null,
     fetchedAt: new Date().toISOString(),
-    matchType: "name_manufacturer",
     normalizedName: normalizeName(name),
     normalizedManufacturer: manufacturer ? normalizeName(manufacturer) : null,
     ...overrides,

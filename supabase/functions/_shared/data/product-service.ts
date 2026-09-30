@@ -45,6 +45,14 @@ function isFresh(product: CachedProduct, now: Date): boolean {
   return now.getTime() - fetchedAt < CACHE_TTL_MS;
 }
 
+/** id 기준으로 병합한다 — 나중 값(공공 API에서 새로 upsert된 값)이 우선한다. */
+function mergePoolById(base: CachedProduct[], updates: CachedProduct[]): CachedProduct[] {
+  const byId = new Map<string, CachedProduct>();
+  for (const p of base) byId.set(p.id, p);
+  for (const p of updates) byId.set(p.id, p);
+  return [...byId.values()];
+}
+
 /** 후보 풀을 자동 매칭/후보 목록으로 정리한다(설계 8.2 step 5~6 공통 로직). */
 function resolveFromPool(
   scan: ScanPayload,
@@ -153,8 +161,41 @@ export function createProductService(deps: {
   }
 
   async function search(query: string, manufacturer: string | null): Promise<ProductCandidate[]> {
+    // 설계 8.2-3: 캐시에 없으면(또는 신선한 후보가 부족하면) 공공 API
+    // 후보를 조회한다 — 스캔되지 않은 제품의 수동 검색도 캐시만으로는
+    // 항상 빈 결과가 되므로, lookup()과 같은 캐시 우선 + API 보강 방식을
+    // search()에도 적용한다.
     const normalizedQuery = normalizeName(query);
-    const pool = normalizedQuery.length > 0 ? await deps.repo.searchByName(normalizedQuery, NAME_SEARCH_LIMIT) : [];
+    const cachePool = normalizedQuery.length > 0 ? await deps.repo.searchByName(normalizedQuery, NAME_SEARCH_LIMIT) : [];
+    const freshCount = cachePool.filter((p) => isFresh(p, now())).length;
+
+    let pool = cachePool;
+    if (freshCount < NAME_SEARCH_LIMIT) {
+      const apiQuery = {
+        name: query.length > 0 ? query : undefined,
+        manufacturer: manufacturer ?? undefined,
+      };
+      const [nutritionSettled, c002Settled] = await Promise.allSettled([
+        deps.nutrition.search(apiQuery),
+        deps.c002.search(apiQuery),
+      ]);
+      const nutritionOk = nutritionSettled.status === "fulfilled";
+      const c002Ok = c002Settled.status === "fulfilled";
+
+      // 둘 다 실패해도 예외를 던지지 않고 캐시 결과로 진행한다(설계 8.3
+      // "API 장애 시 유효 캐시를 사용하고, 캐시도 없으면 부분 결과를
+      // 반환한다" — 검색 화면에서도 동일하게 적용).
+      if (nutritionOk || c002Ok) {
+        const records = [
+          ...(nutritionOk ? nutritionSettled.value : []),
+          ...(c002Ok ? c002Settled.value : []),
+        ];
+        if (records.length > 0) {
+          const upserted = await deps.repo.upsert(records);
+          pool = mergePoolById(cachePool, upserted);
+        }
+      }
+    }
 
     const syntheticScan: ScanPayload = {
       productName: query,
