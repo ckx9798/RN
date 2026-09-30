@@ -1,56 +1,91 @@
-# Welcome to your Expo app 👋
+# RN
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo SDK 57과 React Native 0.86으로 만드는 iOS·Android 모바일 앱입니다.
+Expo Router의 파일 기반 라우팅과 TypeScript strict mode를 사용합니다.
+웹은 지원 대상이 아닙니다.
 
-## Get started
+## 기술 구성
 
-1. Install dependencies
+- Expo SDK 57 (`expo ~57.0.24`)
+- React Native 0.86.3
+- React 19.2.3
+- Expo Router
+- TypeScript 6 strict mode
+- npm과 `package-lock.json`
 
-   ```bash
-   npm install
-   ```
+## 시작하기
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Node.js와 npm을 준비한 뒤 의존성을 설치합니다.
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+개발 서버를 실행합니다.
 
-### Other setup steps
+```bash
+npx expo start
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+터미널 안내에서 iOS 또는 Android 대상을 선택합니다. 네이티브 모듈이
+Expo Go에 포함되지 않은 경우 개발 빌드가 필요합니다.
 
-## Learn more
+## 주요 명령어
 
-To learn more about developing your project with Expo, look at the following resources:
+```bash
+npx expo start
+npx expo lint
+npx tsc --noEmit
+npx expo-doctor
+npx expo install --fix
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+새 Expo 호환 의존성은 승인 후 다음 형식으로 설치합니다.
 
-## Join the community
+```bash
+npx expo install <package>
+```
 
-Join our community of developers creating universal apps.
+## 프로젝트 구조
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+프로젝트는 축소된 Feature-Sliced Design을 목표 구조로 사용합니다.
+
+```text
+src/app/       Expo Router 라우트와 앱 초기화
+src/pages/     화면 단위 슬라이스
+src/widgets/   여러 기능을 조합한 화면 블록
+src/features/  사용자 행동 단위 기능
+src/shared/    공용 UI, 유틸리티와 설정
+assets/        이미지와 폰트
+docs/          규칙, 설계, 계획, 조사와 PR 이력
+```
+
+현재 템플릿 구조에서 FSD 구조로 이동하는 중입니다. 새 코드의 위치와
+레이어 의존 방향은 [아키텍처 규칙](docs/rules/architecture.md)을
+따릅니다.
+
+## 검증
+
+TypeScript 또는 React Native 코드를 변경한 작업은 다음 명령이 모두
+통과해야 완료로 판단합니다.
+
+```bash
+npx expo lint
+npx tsc --noEmit
+```
+
+문서만 변경한 경우에는 `git diff --check`와 링크·경로·명령어를
+확인합니다. 변경 유형별 전체 기준은
+[개발 규칙](docs/rules/development.md)을 참고합니다.
+
+## 프로젝트 규칙
+
+- [기여 안내](CONTRIBUTING.md)
+- [문서 지도](docs/README.md)
+- [아키텍처 규칙](docs/rules/architecture.md)
+- [개발 규칙](docs/rules/development.md)
+- [Git 및 PR 규칙](docs/rules/workflow.md)
+- [문서 관리 규칙](docs/rules/documentation.md)
+- [배포 규칙](docs/rules/release.md)
+
+AI 에이전트는 루트의 [`AGENTS.md`](AGENTS.md)를 먼저 따릅니다.
