@@ -125,96 +125,108 @@ select is(
 );
 
 -- B가 A 소유 행을 update 시도 -> 영향 0행 ------------------------------------
+-- Postgres는 데이터 변경 구문(update/delete)을 FROM 절의 서브쿼리로 쓸 수
+-- 없으므로(구문 오류), 최상위 WITH(CTE)로 작성한다.
 
+with t as (
+  update public.profiles set consent_version = 'hacked'
+  where user_id = '11111111-1111-1111-1111-111111111111'
+  returning 1
+)
 select is(
-  (select count(*) from (
-     update public.profiles set consent_version = 'hacked'
-     where user_id = '11111111-1111-1111-1111-111111111111'
-     returning 1
-   ) t)::bigint, 0::bigint,
+  (select count(*) from t)::bigint, 0::bigint,
   'B는 A의 profiles 행을 update할 수 없다(0행 영향)'
 );
 
+with t as (
+  update public.user_allergens set created_at = now()
+  where user_id = '11111111-1111-1111-1111-111111111111'
+  returning 1
+)
 select is(
-  (select count(*) from (
-     update public.user_allergens set created_at = now()
-     where user_id = '11111111-1111-1111-1111-111111111111'
-     returning 1
-   ) t)::bigint, 0::bigint,
+  (select count(*) from t)::bigint, 0::bigint,
   'B는 A의 user_allergens 행을 update할 수 없다(0행 영향)'
 );
 
+with t as (
+  update public.user_diseases set note = 'hacked'
+  where user_id = '11111111-1111-1111-1111-111111111111'
+  returning 1
+)
 select is(
-  (select count(*) from (
-     update public.user_diseases set note = 'hacked'
-     where user_id = '11111111-1111-1111-1111-111111111111'
-     returning 1
-   ) t)::bigint, 0::bigint,
+  (select count(*) from t)::bigint, 0::bigint,
   'B는 A의 user_diseases 행을 update할 수 없다(0행 영향)'
 );
 
+with t as (
+  update public.analyses set status = 'caution'
+  where user_id = '11111111-1111-1111-1111-111111111111'
+  returning 1
+)
 select is(
-  (select count(*) from (
-     update public.analyses set status = 'caution'
-     where user_id = '11111111-1111-1111-1111-111111111111'
-     returning 1
-   ) t)::bigint, 0::bigint,
+  (select count(*) from t)::bigint, 0::bigint,
   'B는 A의 analyses 행을 update할 수 없다(0행 영향, update 정책 자체가 없음)'
 );
 
+with t as (
+  update public.analysis_findings set title = 'hacked'
+  where user_id = '11111111-1111-1111-1111-111111111111'
+  returning 1
+)
 select is(
-  (select count(*) from (
-     update public.analysis_findings set title = 'hacked'
-     where user_id = '11111111-1111-1111-1111-111111111111'
-     returning 1
-   ) t)::bigint, 0::bigint,
+  (select count(*) from t)::bigint, 0::bigint,
   'B는 A의 analysis_findings 행을 update할 수 없다(0행 영향, update 정책 자체가 없음)'
 );
 
 -- B가 A 소유 행을 delete 시도 -> 영향 0행 ------------------------------------
 
+with t as (
+  delete from public.profiles
+  where user_id = '11111111-1111-1111-1111-111111111111'
+  returning 1
+)
 select is(
-  (select count(*) from (
-     delete from public.profiles
-     where user_id = '11111111-1111-1111-1111-111111111111'
-     returning 1
-   ) t)::bigint, 0::bigint,
+  (select count(*) from t)::bigint, 0::bigint,
   'B는 A의 profiles 행을 delete할 수 없다(0행 영향)'
 );
 
+with t as (
+  delete from public.user_allergens
+  where user_id = '11111111-1111-1111-1111-111111111111'
+  returning 1
+)
 select is(
-  (select count(*) from (
-     delete from public.user_allergens
-     where user_id = '11111111-1111-1111-1111-111111111111'
-     returning 1
-   ) t)::bigint, 0::bigint,
+  (select count(*) from t)::bigint, 0::bigint,
   'B는 A의 user_allergens 행을 delete할 수 없다(0행 영향)'
 );
 
+with t as (
+  delete from public.user_diseases
+  where user_id = '11111111-1111-1111-1111-111111111111'
+  returning 1
+)
 select is(
-  (select count(*) from (
-     delete from public.user_diseases
-     where user_id = '11111111-1111-1111-1111-111111111111'
-     returning 1
-   ) t)::bigint, 0::bigint,
+  (select count(*) from t)::bigint, 0::bigint,
   'B는 A의 user_diseases 행을 delete할 수 없다(0행 영향)'
 );
 
+with t as (
+  delete from public.analyses
+  where user_id = '11111111-1111-1111-1111-111111111111'
+  returning 1
+)
 select is(
-  (select count(*) from (
-     delete from public.analyses
-     where user_id = '11111111-1111-1111-1111-111111111111'
-     returning 1
-   ) t)::bigint, 0::bigint,
+  (select count(*) from t)::bigint, 0::bigint,
   'B는 A의 analyses 행을 delete할 수 없다(0행 영향)'
 );
 
+with t as (
+  delete from public.analysis_findings
+  where user_id = '11111111-1111-1111-1111-111111111111'
+  returning 1
+)
 select is(
-  (select count(*) from (
-     delete from public.analysis_findings
-     where user_id = '11111111-1111-1111-1111-111111111111'
-     returning 1
-   ) t)::bigint, 0::bigint,
+  (select count(*) from t)::bigint, 0::bigint,
   'B는 A의 analysis_findings 행을 delete할 수 없다(0행 영향)'
 );
 

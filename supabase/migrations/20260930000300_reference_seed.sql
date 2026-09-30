@@ -177,4 +177,4 @@ insert into public.disease_standards (id, category, name, source_codes, classifi
 -- 만들지 않는다"와 "근거 없는 규칙은 active = false"를 지키려면 실제
 -- 공식 근거(evidence_url)와 검수(reviewed_at)를 확보한 뒤 별도 마이그레이션
 -- 또는 운영 절차로 추가해야 한다. 지금 채울 수 있는 근거 있는 수치가
--- 없으므로 빈 상태로 둔다(제약 조건 자체는 00_schema에서 검증).
+-- 없으므로 빈 상태로 둔다(제약 조건 자체는 03_reference_data.test.sql에서 검증).

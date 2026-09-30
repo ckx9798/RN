@@ -156,7 +156,7 @@ create policy "public_api_snapshots_select_authenticated" on public.public_api_s
 -- updated_at 트리거 (profiles) -----------------------------------------------
 
 create or replace function public.set_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   new.updated_at = now();
   return new;
