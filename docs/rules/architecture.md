@@ -2,11 +2,23 @@
 
 ## 적용 상태
 
-이 문서는 프로젝트가 적용할 목표 구조의 기준이다. 현재 코드는 Expo
-템플릿의 평면 구조에서 이 기준으로 이동하는 중이며, 실제 파일 이동은
-별도 구현 작업에서 수행한다.
+이 문서는 프로젝트가 적용한 구조의 기준이다. Expo 템플릿의 평면 구조에서
+이 기준으로의 이동은 Task N1(FSD 구조 이동·템플릿 정리)에서 완료했다.
 
-구조 결정의 배경과 파일별 이동 범위는
+`src/app`, `src/shared`, `src/pages/web-shell`가 이 구조를 따른다.
+`src/widgets`, `src/features`는 각 레이어의 첫 슬라이스가 생길 때
+디렉터리를 만든다.
+
+Task N1은 하이브리드 식품 분석 MVP 설계(4.3)가 가정한 평면 구조 대신
+FSD를 적용하면서, 웹 지원 제외 결정에 따라 템플릿의 홈·탐색 탭 화면
+(`app-tabs`, `explore`, `hint-row`, `collapsible`, `external-link`,
+`web-badge` 등)을 이동하지 않고 삭제했다. 이는
+[FSD 폴더 구조 도입 설계](../superpowers/specs/2026-09-22-fsd-structure-design.md)의
+파일 매핑(탭 화면을 `widgets/app-tabs`로 이동)과 다른 결정이며, 앱이
+탭 네비게이션 없는 단일 웹 셸 화면(`pages/web-shell`)으로 시작하기
+때문이다. 배경은 Task N1 커밋 이력을 참조한다.
+
+구조 결정의 배경과 최초 파일별 이동 범위는
 [FSD 폴더 구조 도입 설계](../superpowers/specs/2026-09-22-fsd-structure-design.md)를
 참조한다.
 
