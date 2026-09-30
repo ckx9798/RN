@@ -4,7 +4,8 @@ import { useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase/client";
-import { createBridgeClient, isNativeApp } from "@/lib/native-bridge/bridge-client";
+import { isNativeApp } from "@/lib/native-bridge/bridge-client";
+import { useScanBridge } from "@/lib/native-bridge/use-scan-bridge";
 import type { ScanFailedV1, ScanPayload } from "@/lib/native-bridge/contract";
 import { analyzeFood } from "@/lib/analysis/analyze-client";
 import { STATUS_LABEL } from "@/lib/analysis/present";
@@ -50,6 +51,7 @@ export function HomeScanPanel({ recent }: { recent: RecentAnalysis[] }) {
   const router = useRouter();
   const supabase = useRef(createBrowserSupabase()).current;
   const { setPending } = useScanSession();
+  const { requestScan } = useScanBridge();
 
   const isNative = useSyncExternalStore(subscribeNoop, isNativeApp, getServerIsNative);
   const [isBusy, setIsBusy] = useState(false);
@@ -86,9 +88,13 @@ export function HomeScanPanel({ recent }: { recent: RecentAnalysis[] }) {
     setErrorMessage(null);
     setIsBusy(true);
 
-    const bridge = createBridgeClient(window);
-    const outcome = await bridge.requestScan();
-    bridge.dispose();
+    const outcome = await requestScan();
+
+    if (!outcome) {
+      // 응답을 기다리는 동안 화면을 벗어나 컴포넌트가 언마운트됐다.
+      // 상태를 더 갱신하거나 라우팅하지 않는다.
+      return;
+    }
 
     if (outcome.kind === "cancelled") {
       setIsBusy(false);

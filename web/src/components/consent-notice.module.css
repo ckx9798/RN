@@ -38,3 +38,13 @@
   width: 20px;
   height: 20px;
 }
+
+.readOnlyStatus {
+  margin: 0;
+  min-height: var(--touch-target-min);
+  display: flex;
+  align-items: center;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-foreground);
+}

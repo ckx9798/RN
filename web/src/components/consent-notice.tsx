@@ -11,13 +11,19 @@ const CONSENT_ITEMS = [
  * 개인화 설정 저장 전에 보여주는 동의 안내. 설계 14장(개인정보와 보안)에
  * 따라 수집 항목·목적·보유·삭제 정책을 밝히고, 의료 행위가 아님을
  * 분명히 한다.
+ *
+ * `readOnly`가 true면(설정 화면처럼 이미 동의한 내용을 다시 보여주기만
+ * 할 때) 체크박스 대신 동의 상태를 문구로만 표시한다 — 눌러도 아무
+ * 효과가 없는 체크박스를 두지 않기 위해서다.
  */
 export function ConsentNotice({
   checked,
   onChange,
+  readOnly = false,
 }: {
   checked: boolean;
-  onChange: (checked: boolean) => void;
+  onChange?: (checked: boolean) => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className={styles.container}>
@@ -31,14 +37,18 @@ export function ConsentNotice({
       <p className={styles.disclaimer}>
         이 정보는 의료 진단·치료·처방을 제공하지 않아요.
       </p>
-      <label className={styles.checkboxRow}>
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        <span>위 내용에 동의해요.</span>
-      </label>
+      {readOnly ? (
+        <p className={styles.readOnlyStatus}>{checked ? "동의했어요." : "동의하지 않았어요."}</p>
+      ) : (
+        <label className={styles.checkboxRow}>
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(event) => onChange?.(event.target.checked)}
+          />
+          <span>위 내용에 동의해요.</span>
+        </label>
+      )}
     </div>
   );
 }

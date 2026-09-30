@@ -6,7 +6,7 @@ import { createBrowserSupabase } from "@/lib/supabase/client";
 import { analyzeFood, searchFoodCandidates } from "@/lib/analysis/analyze-client";
 import type { ProductCandidate } from "@/lib/analysis/types";
 import { useScanSession } from "@/components/scan-session-provider";
-import styles from "../analyses.module.css";
+import styles from "@/app/(service)/analyses/analyses.module.css";
 
 const SEARCH_ERROR_MESSAGE = "검색하지 못했어요. 잠시 후 다시 시도해 주세요.";
 const SELECT_ERROR_MESSAGE = "선택한 제품으로 다시 분석하지 못했어요. 잠시 후 다시 시도해 주세요.";

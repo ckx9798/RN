@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/page-header";
 import { CandidatePicker } from "./candidate-picker";
-import styles from "../analyses.module.css";
+import styles from "@/app/(service)/analyses/analyses.module.css";
 
 /**
  * `analyzeFood` 응답에 후보가 여럿일 때 보여주는 후보 선택 화면이다.

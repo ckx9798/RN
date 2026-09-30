@@ -28,7 +28,7 @@ export default async function SettingsPage() {
 
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>개인정보 처리 안내</h2>
-          <ConsentNotice checked onChange={() => {}} />
+          <ConsentNotice checked readOnly />
         </section>
 
         <SettingsActions />

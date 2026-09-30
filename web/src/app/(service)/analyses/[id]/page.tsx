@@ -3,7 +3,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { AnalysisResultView } from "@/components/analysis-result-view";
 import { rowToResult, type AnalysisRow } from "@/lib/analysis/load-analysis";
-import styles from "../analyses.module.css";
+import styles from "@/app/(service)/analyses/analyses.module.css";
 
 /**
  * 분석 결과 상세. RLS가 소유자 외 접근을 막으므로 조회 조건은 `id`만
@@ -31,6 +31,9 @@ export default async function AnalysisDetailPage(props: PageProps<"/analyses/[id
     notFound();
   }
 
+  // Supabase 조인 select에 대한 생성 타입이 아직 없다(S1에서 DB 타입
+  // 생성 예정). 조회 컬럼은 브리프의 쿼리·`AnalysisRow`와 정확히
+  // 일치하므로 여기서만 단언한다.
   const result = rowToResult(row as unknown as AnalysisRow);
 
   return (
