@@ -20,6 +20,12 @@
 -- 설계 10.2 원칙을 지키기 위해서다. "굴소스"는 여전히 잡히지 않는
 -- 알려진 공백이며 표 밖 용어를 추가하지 않기로 한 결정에 따라
 -- 의도적으로 남겨둔다(task-S2-report.md 참고).
+--
+-- [S2 리뷰 2차 수정] '난분'도 같은 이유로 phrase로 바꿨다(예:
+-- "전란분"류 파생 표기 대비). 별개로, "새우육수"가 '우육'(FOOD-018,
+-- phrase)의 부분 문자열 오탐으로 FOOD-018도 잘못 매칭되던 문제를
+-- allergen-matcher.ts의 NEGATIVE_COMPOUNDS['우육'] = ['새우육']로
+-- 막았다(시드 값 변경 아님, 코드 상수 추가).
 
 insert into public.allergen_standards (id, name, source_url, source_version) values
   ('FOOD-001', '알류', 'https://www.foodsafetykorea.go.kr/portal/board/boardDetail.do?bbs_no=bbs001&menu_grp=MENU_NEW01&menu_no=3120&ntctxt_no=1091412', '식품등의 표시기준 2026'),
@@ -49,7 +55,7 @@ insert into public.allergen_match_terms (allergen_id, term, match_type, confiden
   ('FOOD-001', '난백', 'phrase', 'confirmed', 30),
   ('FOOD-001', '난황', 'phrase', 'confirmed', 30),
   ('FOOD-001', '전란', 'phrase', 'confirmed', 30),
-  ('FOOD-001', '난분', 'exact_token', 'confirmed', 20),
+  ('FOOD-001', '난분', 'phrase', 'confirmed', 30),
   ('FOOD-001', '메추리알', 'phrase', 'confirmed', 30),
   ('FOOD-002', '우유', 'phrase', 'confirmed', 30),
   ('FOOD-002', '유청', 'phrase', 'confirmed', 30),

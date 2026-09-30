@@ -62,7 +62,18 @@ Deno.test("item1: 콤마로만 이어진 한 줄, 사용한 제품과 없는 짧
   assertEquals(matches, ["FOOD-004:cross_contamination", "FOOD-005:direct", "FOOD-006:direct"]);
 });
 
-Deno.test("item1: '/'로 구분된 원재료·함유·교차혼입 섹션도 올바르게 분리된다", () => {
+// [2차 리뷰 수정] 이 테스트는 1차 리뷰 때 '/'를 문장 구분자로 추가해
+// 통과시켰던 것인데, 2차 리뷰의 probe8(old/new 비교)가 그 설계가
+// "땅콩/게를 사용한 제품과 같은 제조시설"처럼 교차혼입 지배 항목
+// 목록 *안에서* '/'가 단순 나열 구분자로 쓰이는 실제 사례를 망가뜨림을
+// 보여줬다(땅콩이 지배 범위 밖으로 잘려나가 direct로 오분류됨). '/'를
+// 문장 구분자에서 뺀 결과, 이 테스트처럼 '/'로 원재료·함유·교차혼입
+// 세 구획을 억지로 이어붙이고 그 사이에 쉼표조차 없는 흔치 않은 입력은
+// 땅콩까지 direct로 판정된다(절대 안전 방향이 아닌 쪽으로 틀리지는
+// 않는다 — caution severity는 동일, category만 다르다). probe8의
+// 회귀가 훨씬 흔한 패턴이라 이 트레이드오프를 받아들였다(문서화:
+// task-S2-report.md).
+Deno.test("item1: '/'로 이어붙인 섹션 — 쉼표 없는 경계는 direct 쪽으로 남는다(probe8 회귀 수정의 트레이드오프)", () => {
   const e = extractStatements({
     ingredientsText: "밀가루, 설탕, 우유 / 대두, 밀, 우유 함유 / 이 제품은 땅콩을 사용한 제품과 같은 제조시설에서 제조",
     allergenStatement: null,
@@ -74,7 +85,8 @@ Deno.test("item1: '/'로 구분된 원재료·함유·교차혼입 섹션도 올
   assertEquals(byId.get("FOOD-006"), "direct"); // 밀
   assertEquals(byId.get("FOOD-005"), "direct"); // 대두
   assertEquals(byId.get("FOOD-002"), "direct"); // 우유
-  assertEquals(byId.get("FOOD-004"), "cross_contamination"); // 땅콩
+  // 미탐은 아니다 — 여전히 caution으로 이어지는 direct로 잡힌다.
+  assertEquals(byId.get("FOOD-004"), "direct"); // 땅콩(cross가 아니라 direct로 남음)
 });
 
 // ---- 2) 구분자 확장, 제로폭 문자, 함유/포함 접미사 ----

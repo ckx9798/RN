@@ -37,7 +37,7 @@ export const ALLERGEN_TERMS: AllergenTerm[] = [
   { allergenId: "FOOD-001", term: "난백", matchType: "phrase", confidence: "confirmed", priority: 30 },
   { allergenId: "FOOD-001", term: "난황", matchType: "phrase", confidence: "confirmed", priority: 30 },
   { allergenId: "FOOD-001", term: "전란", matchType: "phrase", confidence: "confirmed", priority: 30 },
-  { allergenId: "FOOD-001", term: "난분", matchType: "exact_token", confidence: "confirmed", priority: 20 },
+  { allergenId: "FOOD-001", term: "난분", matchType: "phrase", confidence: "confirmed", priority: 30 },
   { allergenId: "FOOD-001", term: "메추리알", matchType: "phrase", confidence: "confirmed", priority: 30 },
   { allergenId: "FOOD-002", term: "우유", matchType: "phrase", confidence: "confirmed", priority: 30 },
   { allergenId: "FOOD-002", term: "유청", matchType: "phrase", confidence: "confirmed", priority: 30 },
