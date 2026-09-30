@@ -21,6 +21,13 @@ type ScannerCameraProps = {
   onSkip?: () => void;
   /** OCR 실패 등으로 재촬영이 필요할 때 보여줄 안내 문구. */
   errorMessage?: string | null;
+  /**
+   * 권한 상태가 "거부됨"으로 바뀔 때마다(요청 전 null 상태는 제외) 호출한다.
+   * 상위(ScannerScreen)가 하드웨어 뒤로가기·스와이프 제스처 등으로 이
+   * 화면이 예기치 않게 닫힐 때도 SCAN_FAILED(permission_denied)를 보낼 수
+   * 있도록 현재 권한 상태를 알기 위함이다.
+   */
+  onPermissionStatusChange?: (denied: boolean) => void;
 };
 
 /**
@@ -36,6 +43,7 @@ export function ScannerCamera({
   onPermissionDenied,
   onSkip,
   errorMessage,
+  onPermissionStatusChange,
 }: ScannerCameraProps) {
   const theme = useTheme();
   const cameraRef = useRef<CameraView>(null);
@@ -47,6 +55,10 @@ export function ScannerCamera({
       requestPermission();
     }
   }, [permission, requestPermission]);
+
+  useEffect(() => {
+    onPermissionStatusChange?.(!!permission && !permission.granted);
+  }, [permission, onPermissionStatusChange]);
 
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current || isCapturing) {

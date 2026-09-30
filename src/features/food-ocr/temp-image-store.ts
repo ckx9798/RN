@@ -60,8 +60,28 @@ export function createTempImageStore(ops: FileOps) {
 }
 
 // expo-file-system 기반 실제 구현.
-// expo-camera(takePictureAsync)와 expo-image-manipulator(renderAsync/saveAsync)는
-// 각각 앱 캐시 디렉터리 하위 `Camera/`, `ImageManipulator/`에 파일을 남긴다.
+// 캐시 하위 디렉터리 이름은 추측이 아니라 설치된 네이티브 소스에서
+// 직접 확인했다(현재 버전: expo-camera ~57.0.6, expo-image-manipulator
+// ~57.0.20):
+// - expo-camera iOS: node_modules/expo-camera/ios/Common/ExpoCameraUtils.swift:224
+//   (`cachesDirectory.appendingPathComponent("Camera")`), 호출부
+//   node_modules/expo-camera/ios/Current/CameraPhotoCapture.swift:259
+// - expo-camera Android: node_modules/expo-camera/android/src/main/java/
+//   expo/modules/camera/tasks/ResolveTakenPicture.kt:36
+//   (`DIRECTORY_NAME = "Camera"`), 사용부 같은 파일 293행
+// - expo-image-manipulator iOS: node_modules/expo-image-manipulator/ios/
+//   ImageManipulatorUtils.swift:118 (`appendingPathComponent("ImageManipulator")`),
+//   이 함수는 우리가 쓰는 신규 컨텍스트 API의 saveAsync에서 호출된다
+//   (node_modules/expo-image-manipulator/ios/ImageManipulatorModule.swift:70-75)
+// - expo-image-manipulator Android: node_modules/expo-image-manipulator/android/
+//   src/main/java/expo/modules/imagemanipulator/FileUtils.kt:9
+//   (`File(cacheDirectory, "ImageManipulator")`), saveAsync에서 호출
+//   (node_modules/expo-image-manipulator/android/src/main/java/
+//   expo/modules/imagemanipulator/ImageManipulatorModule.kt:115)
+// 두 모듈 모두 iOS·Android에서 이름이 일치해 파일 확장자로 추가 방어할
+// 필요는 없었다. 다만 다른 서드파티가 같은 이름의 하위 디렉터리를 쓸
+// 가능성에 대비해, Paths.cache 루트 전체가 아니라 이 두 하위 디렉터리
+// 안의 항목만 지운다.
 const STALE_CACHE_SUBDIRS = ['Camera', 'ImageManipulator'];
 
 function listFileUrisIn(directory: Directory): string[] {
