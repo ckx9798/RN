@@ -1,0 +1,500 @@
+import { assertEquals } from "@std/assert";
+import { createProductService } from "../_shared/data/product-service.ts";
+import { CACHE_TTL_MS, type CachedProduct, type ProductRepository } from "../_shared/data/product-repository.ts";
+import { PublicApiError } from "../_shared/data/http-client.ts";
+import { normalizeName } from "../_shared/domain/normalize.ts";
+import type { PublicProductRecord } from "../_shared/data/http-client.ts";
+import type { ScanPayload } from "../_shared/domain/types.ts";
+
+function scan(overrides: Partial<ScanPayload> = {}): ScanPayload {
+  return {
+    productName: "테스트 과자",
+    manufacturer: "테스트제과",
+    reportNumber: "20230012345",
+    ingredientsText: "밀가루, 설탕, 대두유",
+    allergenStatement: null,
+    crossContaminationStatement: null,
+    rawText: "",
+    userReviewed: true,
+    ...overrides,
+  };
+}
+
+function cachedProduct(overrides: Partial<CachedProduct> = {}): CachedProduct {
+  const name = overrides.name ?? "테스트 과자";
+  const manufacturer = overrides.manufacturer ?? "테스트제과";
+  return {
+    id: "00000000-0000-0000-0000-000000000001",
+    reportNumber: "20230012345",
+    name,
+    manufacturer,
+    foodType: "과자",
+    servingSize: "30g",
+    nutrients: { energy: { value: 150, unit: "kcal" } },
+    ingredientsText: "밀가루, 설탕, 대두유",
+    sourceUpdatedAt: "2024-01-01",
+    fetchedAt: new Date().toISOString(),
+    normalizedName: normalizeName(name),
+    normalizedManufacturer: manufacturer ? normalizeName(manufacturer) : null,
+    ...overrides,
+  };
+}
+
+/**
+ * 인메모리 ProductRepository. report_number가 있으면 그것으로, 없으면
+ * (정규화 이름, 정규화 제조사) 조합으로 묶어 upsert한다 — 실제
+ * createSupabaseProductRepository와 동일한 정책(리뷰 반영: report_number
+ * 없는 레코드도 버리지 않고 영속화해 이후 id로 다시 찾을 수 있게 한다).
+ */
+function createInMemoryRepository(seed: CachedProduct[] = []): ProductRepository & { products: CachedProduct[] } {
+  const products = [...seed];
+  let nextId = 1000;
+
+  const repo: ProductRepository & { products: CachedProduct[] } = {
+    products,
+    findByReportNumber(reportNumber) {
+      return Promise.resolve(products.find((p) => p.reportNumber === reportNumber) ?? null);
+    },
+    findById(id) {
+      return Promise.resolve(products.find((p) => p.id === id) ?? null);
+    },
+    searchByName(normalizedNameQuery, limit) {
+      return Promise.resolve(
+        products.filter((p) => p.normalizedName.includes(normalizedNameQuery)).slice(0, limit),
+      );
+    },
+    upsert(records) {
+      type Group = { reportNumber: string | null; records: PublicProductRecord[] };
+      const groups = new Map<string, Group>();
+
+      for (const rec of records) {
+        let key: string;
+        let reportNumber: string | null;
+        if (rec.reportNumber) {
+          key = `rn:${rec.reportNumber}`;
+          reportNumber = rec.reportNumber;
+        } else {
+          const normalizedNameValue = normalizeName(rec.name);
+          const normalizedManufacturerValue = rec.manufacturer ? normalizeName(rec.manufacturer) : null;
+          key = `nm:${normalizedNameValue}::${normalizedManufacturerValue ?? ""}`;
+          reportNumber = null;
+        }
+        const existingGroup = groups.get(key);
+        if (existingGroup) {
+          existingGroup.records.push(rec);
+        } else {
+          groups.set(key, { reportNumber, records: [rec] });
+        }
+      }
+
+      const result: CachedProduct[] = [];
+      for (const { reportNumber, records: group } of groups.values()) {
+        const nutrition = group.find((r) => r.service === "mfds_nutrition");
+        const c002 = group.find((r) => r.service === "foodsafety_c002");
+        const base = nutrition ?? c002 ?? group[0];
+        const name = nutrition?.name || c002?.name || base.name;
+        const manufacturer = nutrition?.manufacturer ?? c002?.manufacturer ?? base.manufacturer;
+        const normalizedNameValue = normalizeName(name);
+        const normalizedManufacturerValue = manufacturer ? normalizeName(manufacturer) : null;
+
+        const existingIndex = reportNumber
+          ? products.findIndex((p) => p.reportNumber === reportNumber)
+          : products.findIndex(
+            (p) =>
+              p.reportNumber === null &&
+              p.normalizedName === normalizedNameValue &&
+              p.normalizedManufacturer === normalizedManufacturerValue,
+          );
+
+        const merged: CachedProduct = {
+          id: existingIndex >= 0 ? products[existingIndex].id : `generated-${nextId++}`,
+          reportNumber,
+          name,
+          manufacturer,
+          foodType: c002?.foodType ?? nutrition?.foodType ?? base.foodType,
+          servingSize: nutrition?.servingSize ?? c002?.servingSize ?? base.servingSize,
+          nutrients: nutrition?.nutrients ?? c002?.nutrients ?? base.nutrients,
+          ingredientsText: c002?.ingredientsText ?? nutrition?.ingredientsText ?? base.ingredientsText,
+          sourceUpdatedAt: nutrition?.sourceUpdatedAt ?? c002?.sourceUpdatedAt ?? base.sourceUpdatedAt,
+          fetchedAt: new Date().toISOString(),
+          normalizedName: normalizedNameValue,
+          normalizedManufacturer: normalizedManufacturerValue,
+        };
+
+        if (existingIndex >= 0) {
+          products[existingIndex] = merged;
+        } else {
+          products.push(merged);
+        }
+        result.push(merged);
+      }
+      return Promise.resolve(result);
+    },
+  };
+  return repo;
+}
+
+/**
+ * 인메모리 repo는 동기 메모리 연산만 하므로 S3 리뷰가 지적한 동시성
+ * 레이스(같은 요청 안에서 두 DB 왕복 사이에 다른 요청이 끼어드는 상황)를
+ * 재현하지 않는다 — JS 실행이 단일 스레드라 upsert() 안에서 await 없이
+ * Map 연산만 하기 때문이다. 그 레이스는 createSupabaseProductRepository
+ * 쪽(실제 DB 왕복)에만 존재했고, 이번 수정은 그쪽에 적용했다(마이그레이션
+ * 20260930000500 + insert-then-recover). 인메모리 repo에서는 대신
+ * "upsert()가 에러를 던지면 product-service가 캐시로 폴백하는지"를
+ * 검증한다 — 실제 저장소가 23505 복구 실패 등으로 에러를 던지는 경우와
+ * 동일한 경로다.
+ */
+function withFailingUpsert(repo: ProductRepository): ProductRepository {
+  return {
+    ...repo,
+    upsert: (_records: PublicProductRecord[]) => Promise.reject(new Error("db write failed")),
+  };
+}
+
+function okNutritionClient(records: PublicProductRecord[]) {
+  return { search: (_q: unknown) => Promise.resolve(records) };
+}
+function okC002Client(records: PublicProductRecord[]) {
+  return { search: (_q: unknown) => Promise.resolve(records) };
+}
+function failingClient(service: "mfds_nutrition" | "foodsafety_c002") {
+  return { search: (_q: unknown) => Promise.reject(new PublicApiError(service, "http")) };
+}
+
+function nutritionRecord(overrides: Partial<PublicProductRecord> = {}): PublicProductRecord {
+  return {
+    service: "mfds_nutrition",
+    reportNumber: "20230012345",
+    name: "테스트 과자",
+    manufacturer: "테스트제과",
+    foodType: "과자",
+    servingSize: "30g",
+    nutrients: { energy: { value: 150, unit: "kcal" } },
+    ingredientsText: null,
+    sourceUpdatedAt: "2024-02-01",
+    raw: {},
+    ...overrides,
+  };
+}
+function c002Record(overrides: Partial<PublicProductRecord> = {}): PublicProductRecord {
+  return {
+    service: "foodsafety_c002",
+    reportNumber: "20230012345",
+    name: "테스트 과자",
+    manufacturer: "테스트제과",
+    foodType: "과자",
+    servingSize: null,
+    nutrients: null,
+    ingredientsText: "밀가루, 설탕, 대두유",
+    sourceUpdatedAt: "2024-02-01",
+    raw: {},
+    ...overrides,
+  };
+}
+
+// deno-lint-ignore no-explicit-any
+type AnyClient = any;
+
+Deno.test("lookup: selectedProductId가 주어지고 repo에 있으면 user_selected로 matched", async () => {
+  const repo = createInMemoryRepository([cachedProduct()]);
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([]) as AnyClient,
+    c002: okC002Client([]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), "00000000-0000-0000-0000-000000000001");
+  assertEquals(result.productMatch, "matched");
+  assertEquals(result.product?.matchType, "user_selected");
+  assertEquals(result.candidates, []);
+});
+
+Deno.test("lookup: selectedProductId가 repo에 없으면 not_found", async () => {
+  const repo = createInMemoryRepository([]);
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([]) as AnyClient,
+    c002: okC002Client([]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), "no-such-id");
+  assertEquals(result.productMatch, "not_found");
+  assertEquals(result.product, null);
+});
+
+Deno.test("lookup: 캐시 hit(만료 전)이면 외부 API를 호출하지 않고 apiStatus ok", async () => {
+  const fresh = cachedProduct({ fetchedAt: new Date().toISOString() });
+  const repo = createInMemoryRepository([fresh]);
+  let nutritionCalled = false;
+  let c002Called = false;
+  const service = createProductService({
+    repo,
+    nutrition: { search: (_q: unknown) => { nutritionCalled = true; return Promise.resolve([]); } } as AnyClient,
+    c002: { search: (_q: unknown) => { c002Called = true; return Promise.resolve([]); } } as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(nutritionCalled, false);
+  assertEquals(c002Called, false);
+  assertEquals(result.apiStatus, "ok");
+  assertEquals(result.productMatch, "matched");
+});
+
+Deno.test("lookup: 캐시 만료면 현재 요청에서 API 재조회 후 upsert, apiStatus ok", async () => {
+  const stale = cachedProduct({ fetchedAt: new Date(Date.now() - CACHE_TTL_MS - 1000).toISOString() });
+  const repo = createInMemoryRepository([stale]);
+  const freshNutrition = nutritionRecord({ nutrients: { energy: { value: 999, unit: "kcal" } } });
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([freshNutrition]) as AnyClient,
+    c002: okC002Client([c002Record()]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(result.apiStatus, "ok");
+  assertEquals(result.product?.nutrients?.energy?.value, 999);
+});
+
+Deno.test("lookup: API 오류 + 유효 캐시 있으면 캐시 사용, apiStatus cache", async () => {
+  // 이름은 "유효 캐시"지만 실제로는 만료된(stale) 캐시다 — 설계 8.3의
+  // "API 장애 시 유효 캐시를 사용한다"는 신선도와 무관하게 "존재하는
+  // 캐시"를 뜻하므로, 만료된 캐시로도 폴백이 되는지 검증한다.
+  const stale = cachedProduct({ fetchedAt: new Date(Date.now() - CACHE_TTL_MS - 1000).toISOString() });
+  const repo = createInMemoryRepository([stale]);
+  const service = createProductService({
+    repo,
+    nutrition: failingClient("mfds_nutrition") as AnyClient,
+    c002: failingClient("foodsafety_c002") as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(result.apiStatus, "cache");
+  assertEquals(result.productMatch, "matched");
+});
+
+Deno.test("lookup: 공공 API는 성공했지만 repo.upsert 저장이 실패하면 캐시로 폴백한다(apiStatus cache)", async () => {
+  const stale = cachedProduct({ fetchedAt: new Date(Date.now() - CACHE_TTL_MS - 1000).toISOString() });
+  const repo = withFailingUpsert(createInMemoryRepository([stale]));
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([nutritionRecord()]) as AnyClient,
+    c002: okC002Client([c002Record()]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(result.apiStatus, "cache");
+  assertEquals(result.productMatch, "matched");
+});
+
+Deno.test("lookup: repo.upsert 저장 실패 + 캐시 없으면 product null, apiStatus error (예외를 던지지 않는다)", async () => {
+  const repo = withFailingUpsert(createInMemoryRepository([]));
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([nutritionRecord()]) as AnyClient,
+    c002: okC002Client([c002Record()]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(result.apiStatus, "error");
+  assertEquals(result.productMatch, "unavailable");
+  assertEquals(result.product, null);
+});
+
+Deno.test("lookup: API 오류 + 캐시 없으면 product null, productMatch unavailable, apiStatus error", async () => {
+  const repo = createInMemoryRepository([]);
+  const service = createProductService({
+    repo,
+    nutrition: failingClient("mfds_nutrition") as AnyClient,
+    c002: failingClient("foodsafety_c002") as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(result.apiStatus, "error");
+  assertEquals(result.productMatch, "unavailable");
+  assertEquals(result.product, null);
+  assertEquals(result.candidates, []);
+});
+
+Deno.test("lookup: 후보 0개면 not_found", async () => {
+  const repo = createInMemoryRepository([]);
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([]) as AnyClient,
+    c002: okC002Client([]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(result.productMatch, "not_found");
+  assertEquals(result.product, null);
+});
+
+Deno.test("lookup: 자동 선택 조건 불충족(제조사 다름)이면 ambiguous + candidates", async () => {
+  const repo = createInMemoryRepository([]);
+  const mismatched = nutritionRecord({ manufacturer: "다른회사" });
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([mismatched]) as AnyClient,
+    c002: okC002Client([]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan({ reportNumber: null }), null);
+  assertEquals(result.productMatch, "ambiguous");
+  assertEquals(result.product, null);
+  if (result.candidates.length === 0) throw new Error("candidates가 비어 있으면 안 된다");
+});
+
+Deno.test("lookup: 복수 후보면 ambiguous + candidates", async () => {
+  const repo = createInMemoryRepository([]);
+  const a = nutritionRecord({ reportNumber: "111", manufacturer: "테스트제과" });
+  const b = nutritionRecord({ reportNumber: "222", manufacturer: "테스트제과" });
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([a, b]) as AnyClient,
+    c002: okC002Client([]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan({ reportNumber: null }), null);
+  assertEquals(result.productMatch, "ambiguous");
+  assertEquals(result.candidates.length, 2);
+});
+
+Deno.test("lookup: 영양(nutrition)과 C002 결과는 reportNumber가 같으면 한 제품으로 병합된다", async () => {
+  const repo = createInMemoryRepository([]);
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([nutritionRecord()]) as AnyClient,
+    c002: okC002Client([c002Record()]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(result.productMatch, "matched");
+  assertEquals(result.product?.nutrients?.energy?.value, 150); // nutrition 출처
+  assertEquals(result.product?.ingredientsText, "밀가루, 설탕, 대두유"); // C002 출처
+});
+
+Deno.test("lookup: 한쪽 API만 실패해도 다른 쪽 데이터로 진행하고 apiStatus는 ok", async () => {
+  const repo = createInMemoryRepository([]);
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([nutritionRecord()]) as AnyClient,
+    c002: failingClient("foodsafety_c002") as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(result.apiStatus, "ok");
+  assertEquals(result.partialFailure, true);
+  assertEquals(result.productMatch, "matched");
+});
+
+Deno.test("lookup: report_number 없는 API 레코드도 후보로 남고 이후 id로 선택할 수 있다", async () => {
+  const repo = createInMemoryRepository([]);
+  // 제조사를 다르게 해 자동 선택(pickAutomatic)되지 않고 후보로 남게 한다.
+  const noReportNumber = nutritionRecord({ reportNumber: null, manufacturer: "다른회사" });
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([noReportNumber]) as AnyClient,
+    c002: okC002Client([]) as AnyClient,
+  });
+
+  const first = await service.lookup(scan({ reportNumber: null }), null);
+  assertEquals(first.productMatch, "ambiguous");
+  assertEquals(first.candidates.length, 1);
+  assertEquals(first.candidates[0].reportNumber, null);
+
+  const candidateId = first.candidates[0].id;
+  const selected = await service.lookup(scan({ reportNumber: null }), candidateId);
+  assertEquals(selected.productMatch, "matched");
+  assertEquals(selected.product?.matchType, "user_selected");
+  assertEquals(selected.product?.reportNumber, null);
+  assertEquals(selected.product?.name, "테스트 과자");
+});
+
+Deno.test("search: 이름으로 캐시를 검색해 순위 매긴 후보를 반환한다", async () => {
+  const repo = createInMemoryRepository([cachedProduct()]);
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([]) as AnyClient,
+    c002: okC002Client([]) as AnyClient,
+  });
+
+  const result = await service.search("테스트 과자", "테스트제과");
+  assertEquals(result.length, 1);
+  assertEquals(result[0].name, "테스트 과자");
+});
+
+Deno.test("search: 캐시 미스면 공공 API를 조회해 후보를 반환한다", async () => {
+  const repo = createInMemoryRepository([]);
+  let nutritionCalled = false;
+  const service = createProductService({
+    repo,
+    nutrition: {
+      search: (_q: unknown) => {
+        nutritionCalled = true;
+        return Promise.resolve([nutritionRecord()]);
+      },
+    } as AnyClient,
+    c002: okC002Client([]) as AnyClient,
+  });
+
+  const result = await service.search("테스트 과자", "테스트제과");
+  assertEquals(nutritionCalled, true);
+  assertEquals(result.length, 1);
+  assertEquals(result[0].name, "테스트 과자");
+});
+
+Deno.test("search: 신선한 캐시가 10개 이상이면 공공 API를 호출하지 않는다", async () => {
+  const seed: CachedProduct[] = [];
+  for (let i = 0; i < 10; i += 1) {
+    seed.push(cachedProduct({ id: `seed-${i}`, reportNumber: `rn-${i}`, name: `테스트 과자${i}` }));
+  }
+  const repo = createInMemoryRepository(seed);
+  let nutritionCalled = false;
+  let c002Called = false;
+  const service = createProductService({
+    repo,
+    nutrition: {
+      search: (_q: unknown) => {
+        nutritionCalled = true;
+        return Promise.resolve([]);
+      },
+    } as AnyClient,
+    c002: {
+      search: (_q: unknown) => {
+        c002Called = true;
+        return Promise.resolve([]);
+      },
+    } as AnyClient,
+  });
+
+  const result = await service.search("과자", null);
+  assertEquals(nutritionCalled, false);
+  assertEquals(c002Called, false);
+  assertEquals(result.length, 10);
+});
+
+Deno.test("search: repo.upsert 저장이 실패해도 예외 없이 캐시 결과를 반환한다", async () => {
+  const repo = withFailingUpsert(createInMemoryRepository([cachedProduct({ id: "cache-1" })]));
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([nutritionRecord()]) as AnyClient,
+    c002: okC002Client([c002Record()]) as AnyClient,
+  });
+
+  const result = await service.search("테스트 과자", "테스트제과");
+  assertEquals(result.length, 1);
+  assertEquals(result[0].id, "cache-1");
+});
+
+Deno.test("search: 공공 API 오류가 나면 예외 없이 캐시 결과를 반환한다", async () => {
+  const repo = createInMemoryRepository([cachedProduct({ id: "cache-1" })]);
+  const service = createProductService({
+    repo,
+    nutrition: failingClient("mfds_nutrition") as AnyClient,
+    c002: failingClient("foodsafety_c002") as AnyClient,
+  });
+
+  const result = await service.search("테스트 과자", "테스트제과");
+  assertEquals(result.length, 1);
+  assertEquals(result[0].id, "cache-1");
+});

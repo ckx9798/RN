@@ -2,7 +2,7 @@
 
 ## 기술 기준
 
-- Expo SDK 57 (`expo ~57.0.24`)
+- Expo SDK 57 (`expo ~57.0.26`)
 - React Native 0.86 (`react-native 0.86.3`)
 - React 19.2
 - TypeScript strict mode

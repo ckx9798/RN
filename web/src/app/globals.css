@@ -1,0 +1,93 @@
+:root {
+  --color-background: #ffffff;
+  --color-surface: #f7f7f8;
+  --color-foreground: #17171a;
+  --color-foreground-muted: #6b6b70;
+  --color-border: #e2e2e5;
+  --color-accent: #2f6fed;
+  --color-accent-foreground: #ffffff;
+  --color-danger: #d1373f;
+
+  --color-status-caution-bg: #fdecec;
+  --color-status-caution-fg: #b3261e;
+  --color-status-needs-review-bg: #fdf1e0;
+  --color-status-needs-review-fg: #a15c00;
+  --color-status-no-flags-bg: #eaf1fb;
+  --color-status-no-flags-fg: #2f5fa8;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+
+  --font-size-sm: 13px;
+  --font-size-md: 15px;
+  --font-size-lg: 20px;
+
+  --layout-max-width: 480px;
+  --touch-target-min: 44px;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #0f0f11;
+    --color-surface: #1a1a1d;
+    --color-foreground: #f2f2f3;
+    --color-foreground-muted: #9a9a9f;
+    --color-border: #2c2c30;
+    --color-accent: #6c9bff;
+    --color-accent-foreground: #0f0f11;
+    --color-danger: #ff6b72;
+
+    --color-status-caution-bg: #3a1f1f;
+    --color-status-caution-fg: #ff8f88;
+    --color-status-needs-review-bg: #3a2f18;
+    --color-status-needs-review-fg: #ffc46b;
+    --color-status-no-flags-bg: #1c2a3d;
+    --color-status-no-flags-fg: #9dc0ff;
+
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR",
+    sans-serif;
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}

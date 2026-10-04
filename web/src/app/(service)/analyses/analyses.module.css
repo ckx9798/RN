@@ -1,0 +1,208 @@
+.page {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 이력 목록 */
+
+.listContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+.empty {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-foreground-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--touch-target-min);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  text-decoration: none;
+  color: var(--color-foreground);
+}
+
+.itemName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-md);
+}
+
+.itemMeta {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.itemStatus {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+}
+
+.itemStatus[data-status="caution"] {
+  color: var(--color-status-caution-fg);
+}
+
+.itemStatus[data-status="needs_review"] {
+  color: var(--color-status-needs-review-fg);
+}
+
+.itemStatus[data-status="no_flags"] {
+  color: var(--color-status-no-flags-fg);
+}
+
+.itemDate {
+  font-size: var(--font-size-sm);
+  color: var(--color-foreground-muted);
+}
+
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.pageLink,
+.pageLinkDisabled {
+  min-height: var(--touch-target-min);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.pageLink {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.pageLinkDisabled {
+  color: var(--color-foreground-muted);
+  opacity: 0.5;
+}
+
+/* 후보 선택 */
+
+.selectContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+.selectDescription {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-foreground-muted);
+}
+
+.candidateList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.candidateItem {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-height: calc(var(--touch-target-min) * 1.1);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  text-align: left;
+}
+
+.candidateName {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
+
+.candidateMeta {
+  font-size: var(--font-size-sm);
+  color: var(--color-foreground-muted);
+}
+
+.selectEmpty {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-foreground-muted);
+}
+
+.skipButton {
+  min-height: var(--touch-target-min);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-foreground);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.searchForm {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.searchInput {
+  flex: 1;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-foreground);
+  font-size: var(--font-size-md);
+}
+
+.searchButton {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--color-accent);
+  color: var(--color-accent-foreground);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.searchButton:disabled {
+  opacity: 0.6;
+}
+
+.errorText {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
