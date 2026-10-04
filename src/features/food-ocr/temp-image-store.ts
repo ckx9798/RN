@@ -13,6 +13,7 @@ export type FileOps = {
 /**
  * 촬영·리사이즈 과정에서 생기는 임시 이미지의 수명을 추적한다.
  * - track: 삭제 대상 URI를 등록한다.
+ * - release: 특정 작업이 소유한 URI만 삭제한다(늦게 끝난 OCR 정리용).
  * - releaseAll: 등록된 모든 URI를 삭제한다. 일부가 실패해도 나머지는 계속
  *   삭제하고 예외를 던지지 않는다(개인정보가 될 수 있는 URI·오류 내용은
  *   로그에 남기지 않고 실패 건수만 남긴다).
@@ -24,6 +25,15 @@ export function createTempImageStore(ops: FileOps) {
 
   function track(uri: string): void {
     tracked.add(uri);
+  }
+
+  async function release(uri: string): Promise<void> {
+    if (!tracked.delete(uri)) return;
+    try {
+      await ops.delete(uri);
+    } catch {
+      console.warn('[food-ocr] 임시 이미지 1건 삭제 실패');
+    }
   }
 
   async function releaseAll(): Promise<void> {
@@ -56,7 +66,7 @@ export function createTempImageStore(ops: FileOps) {
     }
   }
 
-  return { track, releaseAll, cleanupStale };
+  return { track, release, releaseAll, cleanupStale };
 }
 
 // expo-file-system 기반 실제 구현.
