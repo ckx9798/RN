@@ -7,7 +7,7 @@ import { createBrowserSupabase } from "@/lib/supabase/client";
 import { isNativeApp } from "@/lib/native-bridge/bridge-client";
 import { useScanBridge } from "@/lib/native-bridge/use-scan-bridge";
 import type { ScanFailedV1, ScanPayload } from "@/lib/native-bridge/contract";
-import { analyzeFood } from "@/lib/analysis/analyze-client";
+import { analyzeFood, OVERSIZED_SCAN_MESSAGE } from "@/lib/analysis/analyze-client";
 import { STATUS_LABEL } from "@/lib/analysis/present";
 import type { AnalysisResult } from "@/lib/analysis/types";
 import { useScanSession } from "@/components/scan-session-provider";
@@ -67,8 +67,9 @@ export function HomeScanPanel({ recent }: { recent: RecentAnalysis[] }) {
     setIsBusy(false);
 
     if (!result.ok) {
-      setRetryScan(scan);
-      setErrorMessage(ANALYZE_ERROR_MESSAGE);
+      const oversized = result.code === "payload_too_large";
+      setRetryScan(oversized ? null : scan);
+      setErrorMessage(oversized ? OVERSIZED_SCAN_MESSAGE : ANALYZE_ERROR_MESSAGE);
       return;
     }
 

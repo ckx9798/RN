@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase/client";
-import { analyzeFood, searchFoodCandidates } from "@/lib/analysis/analyze-client";
+import { analyzeFood, searchFoodCandidates, OVERSIZED_SCAN_MESSAGE } from "@/lib/analysis/analyze-client";
 import type { ProductCandidate } from "@/lib/analysis/types";
 import { useScanSession } from "@/components/scan-session-provider";
 import styles from "@/app/(service)/analyses/analyses.module.css";
@@ -78,7 +78,7 @@ export function CandidatePicker() {
     setIsSubmitting(false);
 
     if (!result.ok) {
-      setErrorMessage(SELECT_ERROR_MESSAGE);
+      setErrorMessage(result.code === "payload_too_large" ? OVERSIZED_SCAN_MESSAGE : SELECT_ERROR_MESSAGE);
       return;
     }
 

@@ -22,6 +22,23 @@ function scanPayload() {
 }
 
 describe("analyzeFood", () => {
+  it("48KiB 초과 한글 요청은 원문 손실 없이 촬영 재시도 오류를 반환한다", async () => {
+    const invoke = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const scan = { ...scanPayload(), ingredientsText: "가".repeat(2000), rawText: "나".repeat(15000) };
+    const original = JSON.stringify(scan);
+    expect(await analyzeFood(fakeSupabase(invoke), { scan })).toEqual({ ok: false, code: "payload_too_large" });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(JSON.stringify(scan)).toBe(original);
+  });
+
+  it("후보 선택 UUID를 추가할 공간까지 처음부터 확보한다", async () => {
+    const scan = { ...scanPayload(), rawText: "" };
+    const base = new TextEncoder().encode(JSON.stringify({ scan })).length;
+    scan.rawText = "a".repeat(48 * 1024 - base);
+    const invoke = vi.fn().mockResolvedValue({ data: {}, error: null });
+    expect(await analyzeFood(fakeSupabase(invoke), { scan })).toEqual({ ok: false, code: "payload_too_large" });
+    expect(invoke).not.toHaveBeenCalled();
+  });
   it("성공하면 ok:true와 응답 데이터를 반환한다", async () => {
     const response: AnalyzeFoodResponse = {
       analysisId: "analysis-1",
