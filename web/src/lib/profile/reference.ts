@@ -49,7 +49,7 @@ export async function fetchAllergenStandards(
     .order("id", { ascending: true });
 
   if (error || !data) {
-    return [];
+    throw new Error("profile_reference_unavailable");
   }
 
   return (data as AllergenStandardRow[]).map((row) => ({ id: row.id, name: row.name }));
@@ -65,7 +65,7 @@ export async function fetchDiseaseCategoryGroups(
     .order("id", { ascending: true });
 
   if (error || !data) {
-    return [];
+    throw new Error("profile_reference_unavailable");
   }
 
   const groupsByCategory = new Map<string, DiseaseStandard[]>();
@@ -99,6 +99,12 @@ export async function fetchMyProfileSelection(
     supabase.from("user_allergens").select("allergen_id").eq("user_id", userId),
     supabase.from("user_diseases").select("disease_id, note").eq("user_id", userId),
   ]);
+
+  if (profileResult.error || allergenResult.error || diseaseResult.error || !allergenResult.data || !diseaseResult.data) {
+    // 부분 조회를 빈 선택으로 저장하면 기존 건강 정보를 지울 수 있다.
+    // 상세 오류나 개인정보는 노출하지 않고 편집 폼 생성을 중단한다.
+    throw new Error("profile_selection_unavailable");
+  }
 
   const profile = profileResult.data as ProfileRow | null;
   const allergens = (allergenResult.data as UserAllergenRow[] | null) ?? [];

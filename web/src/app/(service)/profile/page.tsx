@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createServerSupabase } from "@/lib/supabase/server";
 import {
   fetchAllergenStandards,
@@ -20,11 +21,22 @@ export default async function ProfilePage() {
 
   const userId = data.claims.sub;
 
-  const [allergens, diseaseCategoryGroups, selection] = await Promise.all([
+  const loaded = await Promise.all([
     fetchAllergenStandards(supabase),
     fetchDiseaseCategoryGroups(supabase),
     fetchMyProfileSelection(supabase, userId),
-  ]);
+  ]).catch(() => null);
+
+  if (!loaded) {
+    return (
+      <div className={styles.page}>
+        <PageHeader title="개인화 설정" backHref="/" />
+        <p role="alert">기존 설정을 불러오지 못했어요. 저장된 정보는 변경하지 않았어요.</p>
+        <Link href="/profile">다시 불러오기</Link>
+      </div>
+    );
+  }
+  const [allergens, diseaseCategoryGroups, selection] = loaded;
 
   const otherNote =
     selection.diseases.find((disease) => disease.diseaseId === OTHER_DISEASE_ID)?.note ?? "";
