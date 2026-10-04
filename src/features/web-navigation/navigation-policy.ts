@@ -1,3 +1,5 @@
+// WebView 래퍼의 자동 외부 열기를 끄고 모든 URL을 정책 콜백에 전달한다.
+export const WEBVIEW_ORIGIN_WHITELIST = ['*'];
 export type NavigationDecision = 'allow' | 'external' | 'block';
 
 /**

@@ -1,1 +1,1 @@
-export { decideNavigation, type NavigationDecision } from './navigation-policy';
+export { decideNavigation, WEBVIEW_ORIGIN_WHITELIST, type NavigationDecision } from './navigation-policy';

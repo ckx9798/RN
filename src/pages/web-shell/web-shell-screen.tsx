@@ -7,7 +7,7 @@ import { WebView } from 'react-native-webview';
 import type { WebViewErrorEvent, WebViewHttpErrorEvent } from 'react-native-webview/lib/WebViewTypes';
 
 import { useNativeBridge } from '@/features/native-bridge';
-import { decideNavigation } from '@/features/web-navigation';
+import { decideNavigation, WEBVIEW_ORIGIN_WHITELIST } from '@/features/web-navigation';
 import { webAppConfig } from '@/shared/config/app-config';
 import { Spacing } from '@/shared/config/theme';
 import { ThemedText } from '@/shared/ui/themed-text';
@@ -95,7 +95,9 @@ function WebShellReady({ url, origin }: { url: string; origin: string }) {
           ref={webViewRef}
           source={{ uri: url }}
           style={styles.webView}
-          originWhitelist={[origin]}
+          // 래퍼가 비허용 URL을 Linking으로 먼저 열지 않도록 모든 URL을
+          // handleShouldStartLoad의 엄격한 정책으로 전달한다.
+          originWhitelist={WEBVIEW_ORIGIN_WHITELIST}
           onShouldStartLoadWithRequest={handleShouldStartLoad}
           setSupportMultipleWindows={false}
           javaScriptCanOpenWindowsAutomatically={false}
