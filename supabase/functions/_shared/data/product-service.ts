@@ -154,10 +154,25 @@ export function createProductService(deps: {
       ...(nutritionOk ? nutritionSettled.value : []),
       ...(c002Ok ? c002Settled.value : []),
     ];
-    const refreshedPool = records.length > 0 ? await deps.repo.upsert(records) : [];
     const partialFailure = !nutritionOk || !c002Ok;
 
-    return resolveFromPool(scan, refreshedPool, "ok", partialFailure);
+    if (records.length === 0) {
+      return resolveFromPool(scan, [], "ok", partialFailure);
+    }
+
+    // repo.upsert()는 DB 쓰기다 — 공공 API 자체는 성공해도 저장이 실패할
+    // 수 있다(예: 제약 위반, 일시적 장애). 캐시 갱신 실패도 공공 API 실패와
+    // 동일하게 취급해 로컬 캐시로 폴백한다(에러를 삼키지 않고 저장소가
+    // 던진 에러를 여기서 잡아 처리한다).
+    try {
+      const refreshedPool = await deps.repo.upsert(records);
+      return resolveFromPool(scan, refreshedPool, "ok", partialFailure);
+    } catch {
+      if (localCandidates.length > 0) {
+        return resolveFromPool(scan, localCandidates, "cache", false);
+      }
+      return { product: null, candidates: [], productMatch: "unavailable", apiStatus: "error", partialFailure: false };
+    }
   }
 
   async function search(query: string, manufacturer: string | null): Promise<ProductCandidate[]> {
@@ -182,17 +197,22 @@ export function createProductService(deps: {
       const nutritionOk = nutritionSettled.status === "fulfilled";
       const c002Ok = c002Settled.status === "fulfilled";
 
-      // 둘 다 실패해도 예외를 던지지 않고 캐시 결과로 진행한다(설계 8.3
-      // "API 장애 시 유효 캐시를 사용하고, 캐시도 없으면 부분 결과를
-      // 반환한다" — 검색 화면에서도 동일하게 적용).
+      // 둘 다 실패하거나 repo.upsert() 저장이 실패해도 예외를 던지지
+      // 않고 캐시 결과로 진행한다(설계 8.3 "API 장애 시 유효 캐시를
+      // 사용하고, 캐시도 없으면 부분 결과를 반환한다" — 검색 화면에서도
+      // 동일하게 적용).
       if (nutritionOk || c002Ok) {
         const records = [
           ...(nutritionOk ? nutritionSettled.value : []),
           ...(c002Ok ? c002Settled.value : []),
         ];
         if (records.length > 0) {
-          const upserted = await deps.repo.upsert(records);
-          pool = mergePoolById(cachePool, upserted);
+          try {
+            const upserted = await deps.repo.upsert(records);
+            pool = mergePoolById(cachePool, upserted);
+          } catch {
+            // 캐시 결과(cachePool)만으로 계속 진행한다.
+          }
         }
       }
     }

@@ -88,6 +88,77 @@ function rowToCachedProduct(row: ProductRow): CachedProduct {
   };
 }
 
+const UNIQUE_VIOLATION = "23505";
+
+/**
+ * report_number가 없는 행은 (normalized_name, coalesce(normalized_manufacturer,''))
+ * 부분 유니크 인덱스(마이그레이션 20260930000500_product_name_unique.sql)로
+ * DB가 동시 삽입을 막는다. "먼저 조회해서 없으면 삽입"은 두 요청이 동시에
+ * 들어오면 레이스가 생기므로, 대신 먼저 삽입을 시도하고 유니크 위반
+ * (23505)이 나면 그제서야 기존 행을 다시 조회해 갱신한다(insert-then-recover
+ * — 조회와 삽입 사이에 레이스가 없다). 그 외 에러는 삼키지 않고 그대로
+ * 던진다 — 호출자(product-service.ts)가 공공 API 실패와 동일하게 캐시
+ * 폴백으로 처리한다.
+ */
+async function upsertByNameManufacturer(
+  serviceClient: SupabaseClient,
+  normalizedNameValue: string,
+  normalizedManufacturerValue: string | null,
+  rowPayload: {
+    normalized_name: string;
+    display_name: string;
+    manufacturer: string | null;
+    normalized_manufacturer: string | null;
+    normalized_payload: NormalizedPayload;
+    source_updated_at: string | null;
+    fetched_at: string;
+  },
+): Promise<CachedProduct> {
+  const inserted = await serviceClient
+    .from("public_food_products")
+    .insert({ report_number: null, ...rowPayload })
+    .select("*")
+    .single();
+
+  if (!inserted.error) {
+    return rowToCachedProduct(inserted.data as ProductRow);
+  }
+  if (inserted.error.code !== UNIQUE_VIOLATION) {
+    throw inserted.error;
+  }
+
+  // 유니크 위반 — 동시 요청이 먼저 같은 조합을 삽입했다. 그 행을 찾아 갱신한다.
+  let existingQuery = serviceClient
+    .from("public_food_products")
+    .select("*")
+    .is("report_number", null)
+    .eq("normalized_name", normalizedNameValue);
+  existingQuery = normalizedManufacturerValue
+    ? existingQuery.eq("normalized_manufacturer", normalizedManufacturerValue)
+    : existingQuery.is("normalized_manufacturer", null);
+
+  const { data: existingRow, error: selectError } = await existingQuery.maybeSingle();
+  if (selectError) {
+    throw selectError;
+  }
+  if (!existingRow) {
+    // 유니크 위반이 났는데 조회가 안 되는 건 비정상 상태 — 원래 삽입
+    // 에러를 그대로 드러낸다(새 에러로 가리지 않는다).
+    throw inserted.error;
+  }
+
+  const { data: updated, error: updateError } = await serviceClient
+    .from("public_food_products")
+    .update(rowPayload)
+    .eq("id", (existingRow as ProductRow).id)
+    .select("*")
+    .single();
+  if (updateError) {
+    throw updateError;
+  }
+  return rowToCachedProduct(updated as ProductRow);
+}
+
 async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest("SHA-256", data);
@@ -257,42 +328,22 @@ export function createSupabaseProductRepository(serviceClient: SupabaseClient): 
           fetched_at: fetchedAt,
         };
 
-        // report_number가 null인 행에는 DB unique 제약이 없으므로(nullable
-        // unique 컬럼) 직접 upsert할 수 없다 — 같은 (정규화 이름, 정규화
-        // 제조사) 조합의 기존 행을 먼저 찾아 있으면 갱신, 없으면 새로
-        // 삽입해 중복을 막는다.
-        let existingQuery = serviceClient
-          .from("public_food_products")
-          .select("*")
-          .is("report_number", null)
-          .eq("normalized_name", normalizedNameValue);
-        existingQuery = normalizedManufacturerValue
-          ? existingQuery.eq("normalized_manufacturer", normalizedManufacturerValue)
-          : existingQuery.is("normalized_manufacturer", null);
-        const { data: existingRow } = await existingQuery.maybeSingle();
-
-        const { data, error } = existingRow
-          ? await serviceClient
-            .from("public_food_products")
-            .update(rowPayload)
-            .eq("id", (existingRow as ProductRow).id)
-            .select("*")
-            .single()
-          : await serviceClient
-            .from("public_food_products")
-            .insert({ report_number: null, ...rowPayload })
-            .select("*")
-            .single();
-
-        if (error || !data) continue;
-        const cached = rowToCachedProduct(data as ProductRow);
+        // insert-then-recover(upsertByNameManufacturer)로 동시 요청 간
+        // 레이스 없이 처리한다. 에러는 삼키지 않고 던진다 — product-service.ts가
+        // 공공 API 실패와 동일하게 캐시 폴백으로 처리한다.
+        const cached = await upsertByNameManufacturer(
+          serviceClient,
+          normalizedNameValue,
+          normalizedManufacturerValue,
+          rowPayload,
+        );
         results.push(cached);
 
         for (const rec of group) {
           const fingerprint = await sha256Hex(
             `${rec.service}:${normalizedNameValue}::${normalizedManufacturerValue ?? ""}`,
           );
-          await serviceClient.from("public_api_snapshots").insert({
+          const { error: snapshotError } = await serviceClient.from("public_api_snapshots").insert({
             product_id: cached.id,
             service_id: rec.service,
             request_fingerprint: fingerprint,
@@ -300,6 +351,9 @@ export function createSupabaseProductRepository(serviceClient: SupabaseClient): 
             source_updated_at: rec.sourceUpdatedAt,
             fetched_at: fetchedAt,
           });
+          if (snapshotError) {
+            throw snapshotError;
+          }
         }
       }
 

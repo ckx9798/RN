@@ -134,6 +134,24 @@ function createInMemoryRepository(seed: CachedProduct[] = []): ProductRepository
   return repo;
 }
 
+/**
+ * 인메모리 repo는 동기 메모리 연산만 하므로 S3 리뷰가 지적한 동시성
+ * 레이스(같은 요청 안에서 두 DB 왕복 사이에 다른 요청이 끼어드는 상황)를
+ * 재현하지 않는다 — JS 실행이 단일 스레드라 upsert() 안에서 await 없이
+ * Map 연산만 하기 때문이다. 그 레이스는 createSupabaseProductRepository
+ * 쪽(실제 DB 왕복)에만 존재했고, 이번 수정은 그쪽에 적용했다(마이그레이션
+ * 20260930000500 + insert-then-recover). 인메모리 repo에서는 대신
+ * "upsert()가 에러를 던지면 product-service가 캐시로 폴백하는지"를
+ * 검증한다 — 실제 저장소가 23505 복구 실패 등으로 에러를 던지는 경우와
+ * 동일한 경로다.
+ */
+function withFailingUpsert(repo: ProductRepository): ProductRepository {
+  return {
+    ...repo,
+    upsert: (_records: PublicProductRecord[]) => Promise.reject(new Error("db write failed")),
+  };
+}
+
 function okNutritionClient(records: PublicProductRecord[]) {
   return { search: (_q: unknown) => Promise.resolve(records) };
 }
@@ -253,6 +271,34 @@ Deno.test("lookup: API 오류 + 유효 캐시 있으면 캐시 사용, apiStatus
   const result = await service.lookup(scan(), null);
   assertEquals(result.apiStatus, "cache");
   assertEquals(result.productMatch, "matched");
+});
+
+Deno.test("lookup: 공공 API는 성공했지만 repo.upsert 저장이 실패하면 캐시로 폴백한다(apiStatus cache)", async () => {
+  const stale = cachedProduct({ fetchedAt: new Date(Date.now() - CACHE_TTL_MS - 1000).toISOString() });
+  const repo = withFailingUpsert(createInMemoryRepository([stale]));
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([nutritionRecord()]) as AnyClient,
+    c002: okC002Client([c002Record()]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(result.apiStatus, "cache");
+  assertEquals(result.productMatch, "matched");
+});
+
+Deno.test("lookup: repo.upsert 저장 실패 + 캐시 없으면 product null, apiStatus error (예외를 던지지 않는다)", async () => {
+  const repo = withFailingUpsert(createInMemoryRepository([]));
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([nutritionRecord()]) as AnyClient,
+    c002: okC002Client([c002Record()]) as AnyClient,
+  });
+
+  const result = await service.lookup(scan(), null);
+  assertEquals(result.apiStatus, "error");
+  assertEquals(result.productMatch, "unavailable");
+  assertEquals(result.product, null);
 });
 
 Deno.test("lookup: API 오류 + 캐시 없으면 product null, productMatch unavailable, apiStatus error", async () => {
@@ -425,6 +471,19 @@ Deno.test("search: 신선한 캐시가 10개 이상이면 공공 API를 호출�
   assertEquals(nutritionCalled, false);
   assertEquals(c002Called, false);
   assertEquals(result.length, 10);
+});
+
+Deno.test("search: repo.upsert 저장이 실패해도 예외 없이 캐시 결과를 반환한다", async () => {
+  const repo = withFailingUpsert(createInMemoryRepository([cachedProduct({ id: "cache-1" })]));
+  const service = createProductService({
+    repo,
+    nutrition: okNutritionClient([nutritionRecord()]) as AnyClient,
+    c002: okC002Client([c002Record()]) as AnyClient,
+  });
+
+  const result = await service.search("테스트 과자", "테스트제과");
+  assertEquals(result.length, 1);
+  assertEquals(result[0].id, "cache-1");
 });
 
 Deno.test("search: 공공 API 오류가 나면 예외 없이 캐시 결과를 반환한다", async () => {
