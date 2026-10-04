@@ -46,3 +46,8 @@ example
 
 # local worktrees
 .worktrees/
+
+# Supabase local dev state and secrets
+supabase/.branches
+supabase/.temp
+supabase/functions/.env
