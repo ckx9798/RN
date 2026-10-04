@@ -168,7 +168,7 @@ HTTP 상태: 200 성공, 400 invalid_request, 401 unauthorized, 413 payload_too_
 - Create: `supabase/.env.example`
 - Modify: `.gitignore` (`supabase/.branches`, `supabase/.temp`, `supabase/functions/.env`)
 
-**Interfaces:** Produces C3 테이블·RPC. `save_my_profile(p_consent_version text, p_has_no_known_disease boolean, p_allergen_ids text[], p_diseases jsonb)` — `p_diseases`는 `[{ "diseaseId": "DIS-002", "note": null }]`. `delete_my_account()`. `insert_analysis(p_analysis jsonb, p_findings jsonb) returns uuid`는 만들지 않는다(S4가 user-scoped 클라이언트로 두 테이블에 insert).
+**Interfaces:** Produces C3 테이블·RPC. `save_my_profile(p_consent_version text, p_has_no_known_disease boolean, p_allergen_ids text[], p_diseases jsonb)` — `p_diseases`는 `[{ "diseaseId": "DIS-002", "note": null }]`. `delete_my_account()`. 분석 저장은 S4의 `save_my_analysis(p_record jsonb) returns uuid`가 담당한다(2026-10-05 리뷰에서 별도 insert 두 번의 부분 저장 문제를 확인해 단일 트랜잭션으로 변경).
 
 - [ ] **Step 1: 초기화.** 저장소 루트에서 `npx supabase init --yes`(또는 대화형이면 `--with-vscode-settings=false` 등 필요한 플래그 확인 `npx supabase init --help`). `config.toml`에서:
   - `[auth] site_url = "http://localhost:3000"`, `additional_redirect_urls = []`
@@ -585,12 +585,21 @@ export function createProductService(deps: { repo: ProductRepository; nutrition:
 
 ### Task S4: analyze-food·food-data Edge Function
 
+**실행 상태 (2026-10-05):** 구현과 Deno 자동 검증, 별도 코드 리뷰 및
+회귀 수정까지 진행했다. 새 저장 RPC의 마이그레이션·pgTAP 실행은 Docker
+부재로 미실행이다. 커밋·푸시는 사용자 승인으로 진행하며 서버 트랙
+통합은 아직 수행하지 않았다.
+
 **Files:**
 - Create: `supabase/functions/_shared/http/cors.ts`, `http/responses.ts`, `http/auth.ts`, `http/rate-limit.ts`, `http/request-validation.ts`, `http/logger.ts`
 - Create: `supabase/functions/_shared/analysis/run-analysis.ts` (순수 오케스트레이션, 의존성 주입)
 - Create: `supabase/functions/_shared/analysis/analysis-store.ts` (user-scoped 클라이언트로 저장, 프로필·기준정보 로드)
+- Create: `supabase/functions/_shared/analysis/runtime.ts`, `supabase/functions/_shared/http/post-handler.ts`
+- Create: `supabase/migrations/20261005000100_analysis_save_rpc.sql`
+- Modify: `supabase/.env.example` (Supabase 서버 환경변수 예시)
 - Create: `supabase/functions/analyze-food/index.ts`, `supabase/functions/food-data/index.ts`
 - Test: `supabase/functions/tests/request-validation.test.ts`, `rate-limit.test.ts`, `logger.test.ts`, `run-analysis.test.ts`, `analyze-food-handler.test.ts`
+- Test: `supabase/functions/tests/auth.test.ts`, `analysis-store.test.ts`, `supabase/tests/06_analysis_save.test.sql`
 
 **Interfaces:**
 ```ts
@@ -624,9 +633,9 @@ export function createAnalyzeFoodHandler(deps: { authenticate(req: Request): Pro
 // 파일 하단: Deno.serve(createAnalyzeFoodHandler(실제 의존성)) — import.meta.main 가드로 테스트 임포트 시 서버 기동 방지
 ```
 
-- [ ] **Step 1: 검증·로깅·속도제한 테스트.** `request-validation.test.ts`: 정상 요청 통과, `scan` 누락, `userReviewed !== true`, `ingredientsText` 공백만, 필드 길이 초과, 추가 키(`imageBase64`, `user_id`) 존재, `data:image/png;base64,` 포함, `file:///` 포함, 500자 base64 연속 문자열, JWT 형태 문자열, `selectedProductId`가 uuid 아님 → 모두 `ok:false`. `rate-limit.test.ts`: limit 20/60초, 21번째 false, 창 경과 후 true. `logger.test.ts`: `console.log`를 스텁해 화이트리스트 외 키는 출력되지 않고 이메일은 `j***@example.com` 형태로 마스킹.
+- [x] **Step 1: 검증·로깅·속도제한 테스트.** `request-validation.test.ts`: 정상 요청 통과, `scan` 누락, `userReviewed !== true`, `ingredientsText` 공백만, 필드 길이 초과, 추가 키(`imageBase64`, `user_id`) 존재, `data:image/png;base64,` 포함, `file:///` 포함, 500자 base64 연속 문자열, JWT 형태 문자열, `selectedProductId`가 uuid 아님 → 모두 `ok:false`. `rate-limit.test.ts`: limit 20/60초, 21번째 false, 창 경과 후 true. `logger.test.ts`: `console.log`를 스텁해 화이트리스트 외 키는 출력되지 않고 이메일은 `j***@example.com` 형태로 마스킹.
 
-- [ ] **Step 2: runAnalysis 테스트.** 가짜 deps로:
+- [x] **Step 2: runAnalysis 테스트.** 가짜 deps로:
   - 프로필 없음 → `{ error: 'profile_required' }`(핸들러는 400 `invalid_request`, message `profile_required`).
   - 라벨에 등록 알레르기 → status `caution`, save 1회 호출, 반환 analysisId 전달.
   - 제품 `ambiguous` → candidates 전달, status `needs_review`, `data_quality` finding(title "제품을 선택해 주세요") 포함, 질환 판정 finding 없이 "제품 선택 후 질환 관련 정보를 확인할 수 있어요" needs_review 1건(설계 13장 "복수 후보: 사용자 선택 전 질환 판정 보류").
@@ -635,12 +644,18 @@ export function createAnalyzeFoodHandler(deps: { authenticate(req: Request): Pro
   - 모든 데이터 완전 + 매칭 없음 → `no_flags`.
   - `result.ruleSetVersion === RULE_SET_VERSION`, `analyzedAt === deps.now().toISOString()`.
   - save에 넘기는 `scan`은 요청 scan 그대로(교정 OCR 스냅샷), `profile`은 로드한 프로필 스냅샷.
+  - 선택한 알레르기·질환의 활성 기준 또는 매칭 용어가 누락되면 `missing`과 `needs_review` finding 추가.
+  - 선택 질환의 관련 영양값 일부가 없으면 누락을 안내하고 `no_flags` 차단(있는 값은 정보로 유지).
 
-- [ ] **Step 3: 핸들러 테스트.** `analyze-food-handler.test.ts`: `OPTIONS` → 204 + CORS 헤더; `GET` → 405; 인증 실패 → 401; 본문 > 48KB(`content-length` 또는 실제 길이) → 413; 잘못된 JSON → 400; 속도 제한 → 429; 정상 → 200 + `AnalyzeFoodResponse`; deps 예외 → 500 `internal`이고 응답·로그에 예외 메시지 원문(사용자 데이터 가능성)을 넣지 않음. 응답 본문에 요청의 `rawText`가 되돌아가지 않음.
+- [x] **Step 3: 핸들러 테스트.** `analyze-food-handler.test.ts`: `OPTIONS` → 204 + CORS 헤더; `GET` → 405; 인증 실패 → 401; 본문 > 48KB(`content-length` 또는 실제 길이) → 413; 잘못된 JSON → 400; 속도 제한 → 429; 정상 → 200 + `AnalyzeFoodResponse`; deps 예외 → 500 `internal`이고 응답·로그에 예외 메시지 원문(사용자 데이터 가능성)을 넣지 않음. 응답 본문에 요청의 `rawText`가 되돌아가지 않음.
 
-- [ ] **Step 4: 구현.** `analysis-store.ts`: `loadReference`는 user-scoped client로 기준정보 4개 테이블 select(active만). `loadProfile`은 profiles/user_allergens/user_diseases select(RLS로 본인만). `save`는 `analyses` insert(`user_id`는 DB default `auth.uid()` — 본문에서 받지 않음), 이어서 `analysis_findings` bulk insert(`sort_order` = 배열 index). 제품 캐시 쓰기만 service-role client(`SUPABASE_SERVICE_ROLE_KEY` env) 사용. env: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MFDS_DATA_GO_KR_SERVICE_KEY`, `FOODSAFETY_KOREA_API_KEY`, `ALLOWED_WEB_ORIGINS`. `food-data/index.ts`는 인증·검증·속도제한 후 `productService.search`.
+- [x] **Step 4: 구현.** `analysis-store.ts`: `loadReference`는 user-scoped client로 기준정보 4개 테이블 select(active만). `loadProfile`은 profiles/user_allergens/user_diseases select(RLS로 본인만). `save`는 동일한 user-scoped client로 `save_my_analysis(p_record)` RPC 호출. RPC는 `security invoker`로 `analyses`와 `analysis_findings`를 한 트랜잭션에서 insert한다(`user_id`는 `auth.uid()` default, `sort_order`는 배열 index, 제품·OCR·프로필은 당시 스냅샷). 원래의 별도 REST insert 두 번은 실패·프로세스 종료 시 불완전한 이력을 남길 수 있어 대체했다. 제품 캐시 쓰기만 service-role client(`SUPABASE_SERVICE_ROLE_KEY` env) 사용. env: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MFDS_DATA_GO_KR_SERVICE_KEY`, `FOODSAFETY_KOREA_API_KEY`, `ALLOWED_WEB_ORIGINS`. `food-data/index.ts`는 인증·검증·속도제한 후 `productService.search`.
 
 - [ ] **Step 5: 전체 테스트·체크.** `cd supabase && ~/.deno/bin/deno task test` 전부 PASS, `~/.deno/bin/deno check functions/analyze-food/index.ts functions/food-data/index.ts`, `~/.deno/bin/deno lint functions/` 통과. Docker가 있으면 `npx supabase functions serve` 스모크.
+  - Deno 테스트 396개 통과(동시에 반영된 S3 캐시 수정 테스트 포함), entrypoint·테스트 타입 검사 및 Deno lint 통과.
+  - 두 entrypoint 직접 실행 시 로컬 `OPTIONS` 204, 미인증 `POST` 401 확인.
+  - 기존 통합 worktree에서 Expo lint·타입 검사와 네이티브 테스트 66개, 웹 lint·타입 검사와 테스트 67개 통과. S4 서버 트랙은 아직 통합하지 않았으므로 전체 MVP 통합 검증을 뜻하지 않는다.
+  - `docker info`: command not found. 새 RPC 마이그레이션 적용·pgTAP 및 Supabase gateway 스모크 미실행이므로 Step 5는 미완료로 유지한다.
 
 - [ ] **Step 6: 커밋.** `feat(analysis): 식품 분석 Edge Function 추가`.
 
