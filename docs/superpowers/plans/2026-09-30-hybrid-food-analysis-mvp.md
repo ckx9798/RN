@@ -1,5 +1,24 @@
 # 하이브리드 식품 개인화 분석 MVP 구현 계획
 
+## 2026-10-05 통합 결과
+
+- 구현 트랙 S1–S4, N1–N3, W1–W3를 통합 브랜치에 병합했다.
+- 최종 통합 리뷰 Important 4건을 수정하고 회귀 테스트를 추가했다.
+- Expo lint/tsc/Jest 70개, 웹 lint/typecheck/Vitest 73개/production build,
+  Deno 396개/check/lint, `expo config --type prebuild`가 통과했다.
+- Expo doctor는 20/21이다. ML Kit New Architecture 경고를 기록하고
+  개발 빌드 검증을 후속 작업으로 남긴 채 병합하도록 사용자가 승인했다.
+- Docker DB·pgTAP·gateway 검증은 사용자 승인으로 생략했다.
+  실제 DB 실행과 실기기 OCR은 검증 완료를 뜻하지 않는다.
+- 기존 트랙별 미체크 항목은 이전 작업자의 실행 기록이며, 최종 통합 결과와
+  승인된 검증 예외는 이 절과 [PR #3 이력](../../history/2026-10-05-pr-3-hybrid-food-analysis-mvp.md)을 기준으로 한다.
+- N2의 `originWhitelist={[origin]}` 계획은 설치된 WebView의 자동 외부 열기
+  우회가 확인돼 `['*']` + 엄격한 `decideNavigation` 콜백으로 대체했다.
+- N3 이미지 수명은 전체 목록 정리 대신 작업별 소유권·취소·완료 정리로
+  보강했다. 취소 이후 생성된 파일도 지우고 이전 결과를 적용하지 않는다.
+- HTTP 요청은 48KiB와 후보 선택 UUID 공간을 웹에서 검사한다.
+  근거를 자르지 않고 초과 시 재촬영을 안내한다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 라벨 촬영(네이티브 OCR) → WebView 웹 앱 → Supabase Edge Function 분석 → 알레르기·질환 개인화 결과까지 동작하는 MVP 코드를 저장소에 구현한다.
@@ -651,13 +670,14 @@ export function createAnalyzeFoodHandler(deps: { authenticate(req: Request): Pro
 
 - [x] **Step 4: 구현.** `analysis-store.ts`: `loadReference`는 user-scoped client로 기준정보 4개 테이블 select(active만). `loadProfile`은 profiles/user_allergens/user_diseases select(RLS로 본인만). `save`는 동일한 user-scoped client로 `save_my_analysis(p_record)` RPC 호출. RPC는 `security invoker`로 `analyses`와 `analysis_findings`를 한 트랜잭션에서 insert한다(`user_id`는 `auth.uid()` default, `sort_order`는 배열 index, 제품·OCR·프로필은 당시 스냅샷). 원래의 별도 REST insert 두 번은 실패·프로세스 종료 시 불완전한 이력을 남길 수 있어 대체했다. 제품 캐시 쓰기만 service-role client(`SUPABASE_SERVICE_ROLE_KEY` env) 사용. env: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MFDS_DATA_GO_KR_SERVICE_KEY`, `FOODSAFETY_KOREA_API_KEY`, `ALLOWED_WEB_ORIGINS`. `food-data/index.ts`는 인증·검증·속도제한 후 `productService.search`.
 
-- [ ] **Step 5: 전체 테스트·체크.** `cd supabase && ~/.deno/bin/deno task test` 전부 PASS, `~/.deno/bin/deno check functions/analyze-food/index.ts functions/food-data/index.ts`, `~/.deno/bin/deno lint functions/` 통과. Docker가 있으면 `npx supabase functions serve` 스모크.
+- [x] **Step 5: 전체 테스트·체크.** Deno 테스트/check/lint 통과. Docker 검증은 사용자 승인으로 생략(통과로 간주하지 않음).
   - Deno 테스트 396개 통과(동시에 반영된 S3 캐시 수정 테스트 포함), entrypoint·테스트 타입 검사 및 Deno lint 통과.
   - 두 entrypoint 직접 실행 시 로컬 `OPTIONS` 204, 미인증 `POST` 401 확인.
   - 기존 통합 worktree에서 Expo lint·타입 검사와 네이티브 테스트 66개, 웹 lint·타입 검사와 테스트 67개 통과. S4 서버 트랙은 아직 통합하지 않았으므로 전체 MVP 통합 검증을 뜻하지 않는다.
-  - `docker info`: command not found. 새 RPC 마이그레이션 적용·pgTAP 및 Supabase gateway 스모크 미실행이므로 Step 5는 미완료로 유지한다.
+  - `docker info`: command not found. 새 RPC 적용·pgTAP·gateway는 미실행.
+    이후 사용자가 Docker 테스트 생략을 승인했다.
 
-- [ ] **Step 6: 커밋.** `feat(analysis): 식품 분석 Edge Function 추가`.
+- [x] **Step 6: 커밋.** `adf85fd` — `feat(analysis): 식품 분석 Edge Function 추가`, 서버 브랜치 push 완료.
 
 ---
 
@@ -884,7 +904,7 @@ export function useFoodOcr(): { step: OcrStep; capture(uri: string): Promise<voi
 
 ## Task F: 통합·전체 검증·이력·PR·병합 (메인 세션)
 
-- [ ] **Step 1:** 통합 브랜치에서 `git merge --no-ff feat/mvp-server`, `feat/mvp-native`, `feat/mvp-web` 순서로 병합. 충돌(`.gitignore`, `tsconfig.json`, 문서)은 양쪽 의도를 보존해 해결.
-- [ ] **Step 2: 전체 검증.** 루트 `npm install` 후 `npx expo lint`, `npx tsc --noEmit`, `npm test`, `npx expo-doctor`; `cd web && npm ci && npm run lint && npm run typecheck && npm test && npm run build`; `cd supabase && ~/.deno/bin/deno task test`; Docker 가능 시 `npx supabase start && npx supabase db reset --local && npx supabase test db --local`. 실제 결과만 기록.
-- [ ] **Step 3: 최종 코드 리뷰.** 리뷰 에이전트로 전체 diff를 설계·계획 대비 검토하고 Critical/Important 이슈 수정.
+- [x] **Step 1:** native/web 통합 브랜치에 최신 main과 서버 트랙을 병합. 기존 변경 보존, 충돌 없음.
+- [x] **Step 2: 전체 검증.** 위 통합 결과와 PR 이력에 실제 결과 및 사용자 승인 예외 기록. Docker와 실기기 검증은 미실행.
+- [x] **Step 3: 최종 코드 리뷰.** 전체 diff 리뷰 완료, Important 4건 수정 및 회귀 테스트 통과. Critical 없음.
 - [ ] **Step 4: PR.** push 후 `gh pr create --draft`로 PR 번호 확보 → `docs/history/2026-09-30-pr-<n>-hybrid-food-analysis-mvp.md` 작성(템플릿 준수: 설계 대비 차이 — FSD 적용, 추가 열, `--allow-read`, 미실행 검증·수동 확인 항목) → 커밋·push → `gh pr ready` → `gh pr merge --merge`(사용자가 병합까지 명시 요청).
