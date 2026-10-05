@@ -48,7 +48,7 @@ function storeHarness(rows: Record<string, unknown> = {}, failing = "") {
       },
     },
   });
-  return { store: createAnalysisStore(client), calls };
+  return { store: createAnalysisStore(client, "owner-id"), calls };
 }
 Deno.test("store: absent profile stays null, DB failure must not become absent", async () => {
   assertEquals(await storeHarness().store.loadProfile(), null);
@@ -70,6 +70,17 @@ Deno.test("store: profile snapshot uses RLS owned selections and ignores notes",
     allergenIds: ["FOOD-006"],
     diseaseIds: ["DIS-002"],
   });
+});
+Deno.test("store: profile reads are filtered by the verified user id", async () => {
+  const { store, calls } = storeHarness({
+    profiles: { consent_version: "v1", has_no_known_disease: true },
+  });
+  await store.loadProfile();
+  for (const table of ["profiles", "user_allergens", "user_diseases"]) {
+    const call = calls.find((c) => c.table === table);
+    assert(call);
+    assertEquals(call.url.searchParams.get("user_id"), "eq.owner-id");
+  }
 });
 Deno.test("store: active reference rows mapped to domain naming and numeric thresholds", async () => {
   const { store, calls } = storeHarness({

@@ -67,6 +67,8 @@ export async function runAnalysis(
     deps.products.lookup(req.scan, req.selectedProductId ?? null),
   ]);
   const { product } = lookup;
+  // rawText도 함께 검사한다. 교정 필드 밖 문구의 알레르기도 놓치지 않도록
+  // 과잉 경고 쪽을 택한다.
   const labelMatches = matchAllergens({
     ingredientsText: `${req.scan.ingredientsText}\n${req.scan.rawText}`,
     allergenStatement: req.scan.allergenStatement,
@@ -81,9 +83,23 @@ export async function runAnalysis(
   }, reference.terms);
   const conflicts: string[] = [];
   if (req.scan.ingredientsText.trim() && product?.ingredientsText?.trim()) {
-    const labelIds = new Set(labelMatches.map((m) => m.allergenId));
-    const apiIds = new Set(apiMatches.map((m) => m.allergenId));
+    // 공공 API에는 원재료 목록만 있으므로 라벨도 원재료 목록의 직접 함유만
+    // 비교한다. 교차혼입·알레르기 표시 문구는 API와 비교할 대상이 아니다.
+    const directIds = (text: string, source: "label" | "mfds_api") =>
+      new Set(
+        matchAllergens({
+          ingredientsText: text,
+          allergenStatement: null,
+          crossContaminationStatement: null,
+          source,
+        }, reference.terms)
+          .filter((m) => m.kind === "direct")
+          .map((m) => m.allergenId),
+      );
+    const labelIds = directIds(req.scan.ingredientsText, "label");
+    const apiIds = directIds(product.ingredientsText, "mfds_api");
     for (const s of reference.allergenStandards) {
+      if (!profile.allergenIds.includes(s.id)) continue;
       if (labelIds.has(s.id) !== apiIds.has(s.id)) {
         conflicts.push(`${s.name}: 제품 라벨/식약처 API 중 한쪽에서만 확인`);
       }
@@ -140,7 +156,7 @@ export async function runAnalysis(
     nutritionAvailable,
     apiStatus: lookup.apiStatus,
     conflicts,
-    missing,
+    missing: [...new Set(missing)],
     sourceDate: product?.sourceUpdatedAt ?? null,
   };
   const findings = buildAllergenFindings(
@@ -176,7 +192,7 @@ export async function runAnalysis(
   for (const conflict of conflicts) {
     findings.push(qualityFinding("원재료 출처 확인 필요", conflict));
   }
-  for (const item of missing) {
+  for (const item of quality.missing) {
     findings.push(qualityFinding("데이터 확인 필요", item));
   }
   const result: AnalysisResult = {

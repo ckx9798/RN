@@ -1,5 +1,6 @@
 import type { AnalyzeFoodRequest } from "../domain/types.ts";
-export const MAX_REQUEST_BYTES = 48 * 1024;
+// 브리지 SCAN_RESULT 상한(64KB) + 요청 래퍼(selectedProductId) 여유분.
+export const MAX_REQUEST_BYTES = 80 * 1024;
 type Parsed<T> = { ok: true; value: T } | { ok: false; message: string };
 export function containsForbiddenContent(value: string): boolean {
   return /data:[a-z]+\/[a-z0-9.+-]+;base64,/i.test(value) ||

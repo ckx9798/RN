@@ -40,7 +40,7 @@ export async function authenticateRuntime(req: Request) {
       apiKey: Deno.env.get("FOODSAFETY_KOREA_API_KEY") ?? "",
     }),
   });
-  const store = createAnalysisStore(user.client);
+  const store = createAnalysisStore(user.client, user.userId);
   return {
     userId: user.userId,
     products,

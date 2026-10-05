@@ -43,6 +43,7 @@ function fail(): never {
 /** Only pass the authenticated caller's client, never a service-role client. */
 export function createAnalysisStore(
   client: SupabaseClient,
+  userId: string,
 ): Pick<AnalysisDeps, "loadReference" | "loadProfile" | "save"> {
   return {
     async loadReference() {
@@ -101,16 +102,23 @@ export function createAnalysisStore(
       };
     },
     async loadProfile() {
+      // RLS에 더해 검증된 사용자 id로도 거른다.
       const response = await client.from("profiles").select(
         "consent_version,has_no_known_disease",
-      ).maybeSingle<ProfileRow>();
+      ).eq("user_id", userId).maybeSingle<ProfileRow>();
       if (response.error) fail();
       if (!response.data) return null;
       const [allergens, diseases] = await Promise.all([
-        client.from("user_allergens").select("allergen_id").returns<
+        client.from("user_allergens").select("allergen_id").eq(
+          "user_id",
+          userId,
+        ).returns<
           { allergen_id: string }[]
         >(),
-        client.from("user_diseases").select("disease_id").returns<
+        client.from("user_diseases").select("disease_id").eq(
+          "user_id",
+          userId,
+        ).returns<
           { disease_id: string }[]
         >(),
       ]);

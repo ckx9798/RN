@@ -4,9 +4,9 @@ import type { AnalyzeFoodRequest, AnalyzeFoodResponse, ApiError, ProductCandidat
 
 type ApiErrorCode = ApiError["error"]["code"];
 
-// 서버 request-validation.ts와 동일한 HTTP 본문 상한. 첫 요청에서도
-// 후보 선택 UUID의 공간을 확보하며 분석 근거는 임의로 자르지 않는다.
-const MAX_ANALYSIS_REQUEST_BYTES = 48 * 1024;
+// 서버 request-validation.ts와 동일한 HTTP 본문 상한(브리지 64KB + 요청 래퍼).
+// 분석 근거는 임의로 자르지 않는다.
+const MAX_ANALYSIS_REQUEST_BYTES = 80 * 1024;
 export const OVERSIZED_SCAN_MESSAGE = "인식한 텍스트가 너무 길어요. 필요한 라벨 영역만 다시 촬영해 주세요.";
 
 type AnalyzeFoodResult = { ok: true; data: AnalyzeFoodResponse } | { ok: false; code: ApiErrorCode | "network" };

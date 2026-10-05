@@ -18,6 +18,11 @@ export async function requireUser(
     },
   });
   const { data, error } = await client.auth.getUser(bearer[1]);
-  if (error || !data.user) return null;
+  // 토큰 거부만 미인증으로 본다. Auth 장애는 500으로 올려 재로그인 루프를 막는다.
+  if (error) {
+    if (error.status && [400, 401, 403].includes(error.status)) return null;
+    throw new Error("auth_unavailable");
+  }
+  if (!data.user) return null;
   return { userId: data.user.id, client };
 }
