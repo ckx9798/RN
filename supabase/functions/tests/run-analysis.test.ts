@@ -129,7 +129,7 @@ for (const state of ["not_found", "unavailable"] as const) {
     );
   });
 }
-Deno.test("analysis: label and API evidence retained, conflicting allergens recorded including unregistered", async () => {
+Deno.test("analysis: label and API evidence retained, only registered conflicting allergens recorded", async () => {
   const response = await runAnalysis(
     { scan: { ...scan(), ingredientsText: "밀가루, 땅콩" } },
     analysisDeps({
@@ -145,7 +145,6 @@ Deno.test("analysis: label and API evidence retained, conflicting allergens reco
   assert(!("error" in response));
   assertEquals(response.result.dataQuality.conflicts, [
     "우유: 제품 라벨/식약처 API 중 한쪽에서만 확인",
-    "땅콩: 제품 라벨/식약처 API 중 한쪽에서만 확인",
     "밀: 제품 라벨/식약처 API 중 한쪽에서만 확인",
   ]);
   assert(
@@ -157,6 +156,48 @@ Deno.test("analysis: label and API evidence retained, conflicting allergens reco
     response.result.findings.some((f) =>
       f.source === "mfds_api" && f.standardId === "FOOD-002"
     ),
+  );
+});
+Deno.test("analysis: label cross-contamination notice is not an API conflict", async () => {
+  const response = await runAnalysis(
+    {
+      scan: {
+        ...scan(),
+        ingredientsText: "밀가루, 설탕",
+        crossContaminationStatement: "땅콩을 사용한 제품과 같은 제조시설에서 제조",
+      },
+    },
+    analysisDeps({
+      loadProfile: () =>
+        Promise.resolve({ ...profile(), allergenIds: ["FOOD-002"] }),
+      products: {
+        lookup: () =>
+          Promise.resolve({
+            ...lookup(),
+            product: { ...lookup().product!, ingredientsText: "밀가루, 설탕" },
+          }),
+      },
+    }),
+  );
+  assert(!("error" in response));
+  assertEquals(response.result.dataQuality.conflicts, []);
+  assertEquals(response.result.status, "no_flags");
+});
+Deno.test("analysis: missing reasons are reported once", async () => {
+  const response = await runAnalysis(
+    { scan: scan() },
+    analysisDeps({
+      loadProfile: () =>
+        Promise.resolve({ ...profile(), allergenIds: ["FOOD-098", "FOOD-099"] }),
+    }),
+  );
+  assert(!("error" in response));
+  const missing = response.result.dataQuality.missing;
+  assertEquals(missing.length, new Set(missing).size);
+  assertEquals(
+    response.result.findings.filter((f) => f.title === "데이터 확인 필요")
+      .length,
+    missing.length,
   );
 });
 Deno.test("analysis: no_flags only for complete data", async () => {
