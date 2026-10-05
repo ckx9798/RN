@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { requireUser } from "../_shared/http/auth.ts";
 
 Deno.test("auth: absent or malformed bearer rejected before network", async () => {
@@ -67,5 +67,22 @@ Deno.test("auth: invalid token never becomes authenticated user", async () => {
       },
     ),
     null,
+  );
+});
+Deno.test("auth: Auth server outage is an error, not a logged-out user", async () => {
+  await assertRejects(() =>
+    requireUser(
+      new Request("https://edge.example", {
+        headers: { authorization: "Bearer valid-token" },
+      }),
+      {
+        supabaseUrl: "https://db.example",
+        anonKey: "anon",
+        fetcher: () =>
+          Promise.resolve(
+            Response.json({ message: "unavailable" }, { status: 503 }),
+          ),
+      },
+    )
   );
 });
