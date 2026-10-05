@@ -77,14 +77,30 @@ Deno.test("handler: unauthorized", async () => {
 Deno.test("handler: oversized declared and streamed bodies including multibyte text", async () => {
   for (
     const req of [
-      request("{}", { "content-length": "49153" }),
-      request("가".repeat(20000), { "content-length": "1" }),
+      request("{}", { "content-length": "81921" }),
+      request("가".repeat(30000), { "content-length": "1" }),
     ]
   ) {
     const response = await handler()(req);
     assertEquals(response.status, 413);
     assertEquals((await response.json()).error.code, "payload_too_large");
   }
+});
+Deno.test("handler: largest bridge-valid Korean scan with selectedProductId is accepted", async () => {
+  // 브리지 상한(64KB)을 계약 필드 길이(rawText ≤ 20000자) 안에서 채운다.
+  const base = { ...scan(), ingredientsText: "", rawText: "나".repeat(20000) };
+  const baseBytes = new TextEncoder().encode(JSON.stringify(base)).length;
+  const bridgeMaxScan = {
+    ...base,
+    ingredientsText: "가".repeat(Math.floor((64 * 1024 - baseBytes) / 3)),
+  };
+  const body = JSON.stringify({
+    scan: bridgeMaxScan,
+    selectedProductId: "12345678-1234-1234-1234-123456789abc",
+  });
+  assert(new TextEncoder().encode(body).length > 48 * 1024);
+  const response = await handler()(request(body));
+  assertEquals(response.status, 200);
 });
 Deno.test("handler: invalid JSON, invalid scan and missing profile are 400", async () => {
   for (
