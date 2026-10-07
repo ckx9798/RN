@@ -1,0 +1,18 @@
+{
+  "cli": {
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "developmentClient": false,
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_WEB_APP_URL": "https://rn-web-iota.vercel.app"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  }
+}

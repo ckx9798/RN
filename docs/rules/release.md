@@ -34,9 +34,11 @@ Bun 프로젝트로 전환된 경우에는 `bunx eas-cli <command>`를 사용한
 - preview: 내부 검토와 QA를 위한 배포 가능한 빌드
 - production: 앱 스토어 제출용 서명 빌드
 
-현재 저장소에는 확정된 `eas.json`이 없으므로 구체적인 프로필 이름,
-환경변수와 배포 채널을 추측해서 만들지 않는다. 설정 도입은 별도 설계와
-승인을 거친다.
+현재 `eas.json`에는 승인된 Android 테스트용 `preview` 프로필만 있다.
+내부 배포용 APK를 생성하며 개발 서버 없이 실행한다. 웹 앱 URL은
+`EXPO_PUBLIC_WEB_APP_URL`로 공개된 Vercel 운영 주소를 사용한다.
+development·production 프로필과 OTA 채널은 아직 설정하지 않았다.
+추가 프로필이나 배포 채널 도입은 별도 설계와 승인을 거친다.
 
 ## EAS Build
 
